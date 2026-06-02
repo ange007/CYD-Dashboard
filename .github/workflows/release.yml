@@ -1,0 +1,95 @@
+name: Release
+
+# Triggers when platformio.ini is pushed to master (version bump lives in
+# custom_spa_version). Builds the web bundle, commits web/dist/ to master,
+# then force-points the version tag at that commit and (re)creates the
+# release. Re-running the same version refreshes everything, including a
+# jsdelivr cache purge so CDN serves the new bundle immediately.
+on:
+  push:
+    branches: [master]
+    paths:
+      - platformio.ini
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Read SPA_VERSION from platformio.ini
+        id: ver
+        run: |
+          V=$(grep -oP '(?<=custom_spa_version = )\S+' platformio.ini)
+          [[ "$V" == v* ]] || V="v$V"
+          echo "version=$V" >> $GITHUB_OUTPUT
+
+      # ── Web build ──────────────────────────────────────────────────────────
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build SPA
+        working-directory: web
+        env:
+          SPA_VERSION: ${{ steps.ver.outputs.version }}
+        run: npm run build
+
+      # ── Commit dist/ to master, then (re)tag ──────────────────────────────
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin \
+            "https://x-access-token:${{ secrets.GITHUB_TOKEN }}@github.com/${{ github.repository }}"
+
+      - name: Commit dist/ + service_shell.h
+        run: |
+          git add -f web/dist/
+          git add src/modules/wifi/service_shell.h
+          git diff --cached --quiet || \
+            git commit -m "chore(release): built web assets for ${{ steps.ver.outputs.version }} [skip ci]"
+          git push origin HEAD:refs/heads/master
+
+      - name: Force version tag onto dist/ commit
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          git tag -f "$VER"
+          git push --force origin "refs/tags/$VER"
+
+      # ── GitHub Release (recreate) ──────────────────────────────────────────
+
+      - name: Delete existing release (ignore if absent)
+        run: gh release delete "${{ steps.ver.outputs.version }}" --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+
+      # ── Purge jsdelivr so the CDN serves the freshly tagged bundle ─────────
+
+      - name: Purge jsdelivr cache
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          REPO="${{ github.repository }}"
+          curl -s "https://purge.jsdelivr.net/gh/${REPO}@${VER}/web/dist/assets/app.js" || true
