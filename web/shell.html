@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html><head>
+<meta charset=utf-8>
+<meta name=viewport content="width=device-width,initial-scale=1,viewport-fit=cover">
+<title>CYD Dashboard</title>
+<link rel=icon href=/favicon.svg.gz>
+<meta name=theme-color content=#3d7ed4>
+<link rel=stylesheet href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css">
+<style>
+html,body{margin:0;height:100%;background:#1a1f2e;color:#eee;font:14px system-ui}
+#_l{position:fixed;inset:0;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:1em}
+.spinner{width:32px;height:32px;border:3px solid #444;border-top-color:#3d7ed4;border-radius:50%;animation:s 1s linear infinite}
+@keyframes s{to{transform:rotate(1turn)}}
+#_e{color:#f44;max-width:80%;text-align:center}
+</style>
+</head><body>
+<div id=_l><div class=spinner></div><div id=_m>Loading dashboard&hellip;</div><div id=_e></div></div>
+<div id=app></div>
+<script type=module>
+(async function(){
+  var V='__SPA_VERSION__';
+  var REPO='__REPO__';
+  var SOURCES=[
+    'https://cdn.jsdelivr.net/gh/'+REPO+'@'+V+'/web/dist/assets/app.js',
+    'https://rawcdn.githack.com/'+REPO+'/'+V+'/web/dist/assets/app.js',
+    '/assets/app.js'
+  ];
+  var msg=document.getElementById('_m');
+  var err=document.getElementById('_e');
+  function hideLoader(){var l=document.getElementById('_l');if(l)l.remove();}
+  for(var i=0;i<SOURCES.length;i++){
+    var src=SOURCES[i];
+    if(msg)msg.textContent='Loading dashboard ('+(i+1)+'/'+SOURCES.length+')…';
+    try{
+      await import(src);
+      hideLoader();
+      if('serviceWorker' in navigator) navigator.serviceWorker.register('/sw.js');
+      return;
+    }catch(e){
+      console.warn('source failed:',src,e&&e.message);
+    }
+  }
+  if(msg)msg.textContent='';
+  if(err)err.textContent='Cannot load dashboard from any source. Check internet or device firmware.';
+})();
+</script>
+</body></html>

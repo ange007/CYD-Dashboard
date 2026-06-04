@@ -1,0 +1,13 @@
+SET(SOURCES components/ui_comp_actionbutton.c
+    components/ui_comp.c
+    screens/ui_screenMain.c
+    screens/ui_screenWifi.c
+    screens/ui_screenSettings.c
+    ui_theme_manager.c
+    ui_themes.c
+    ui.c
+    components/ui_comp_hook.c
+    ui_helpers.c
+    ui_events.cpp)
+
+add_library(ui ${SOURCES})

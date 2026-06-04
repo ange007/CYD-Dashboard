@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='6' fill='%23111111'/%3E%3Crect x='2' y='2' width='13' height='10' rx='2' fill='%234a9eff' opacity='0.9'/%3E%3Crect x='17' y='2' width='13' height='10' rx='2' fill='%234a9eff' opacity='0.55'/%3E%3Crect x='2' y='14' width='13' height='16' rx='2' fill='%234a9eff' opacity='0.55'/%3E%3Crect x='17' y='14' width='13' height='16' rx='2' fill='%234a9eff' opacity='0.9'/%3E%3C/svg%3E" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CYD Dashboard</title>
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/5.15.4/css/all.min.css" />
+    <!-- Framework runtime resolved at load time via esm.sh CDN. Keeps ~39 KB
+         gzipped off the device's LittleFS. Our service worker (sw.js) caches
+         CDN responses on first hit, so subsequent loads work fully offline. -->
+    <script type="importmap">
+    {
+      "imports": {
+        "vue":        "https://esm.sh/vue@3.4.38",
+        "vue-router": "https://esm.sh/vue-router@4.4.3?external=vue",
+        "pinia":      "https://esm.sh/pinia@2.2.2?external=vue"
+      }
+    }
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

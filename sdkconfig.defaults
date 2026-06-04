@@ -1,0 +1,96 @@
+# sdkconfig.defaults — project-level IDF config overrides
+# Processed by PlatformIO/arduino-esp32 during build configuration.
+#
+# Goal: reduce DRAM consumption on ESP32-S3 (JC4827W543C, 320 KB DRAM)
+# while allowing 3 concurrent TCP connections (2 HTTP + 1 WebSocket).
+#
+# DRAM consumers (measured, JC4827W543C, PsychicHttp + NimBLE):
+#   idle heap before NimBLE init:      ≈ 70672 B
+#   NimBLE init (host task + MBUFs):   ≈ 53576 B
+#   idle heap after NimBLE init:       ≈ 17096 B  (effective baseline)
+#   per TCP connection delta:          ≈  2920 B  (SND + WND at 1×MSS = 1460 each)
+#
+# DRAM budget during page load (max_open_sockets=3):
+#   3 sockets × (1460 SND + 1460 WND) =  8760 B
+#   ──────────────────────────────────────────────
+#   worst-case                          =  8760 B
+#   idle heap (after NimBLE)            ≈ 17096 B
+#   minimum headroom                    ≈  8336 B  ← ample for lwIP ACK pbufs
+#
+# WHY 1×MSS (not 2×MSS):
+#   PsramStaticHandler reads the entire file into PSRAM before starting the TCP
+#   send loop, so sendChunk() is never blocked by LittleFS I/O.  One 1024-byte
+#   chunk leaves 1460-1024 = 436 B free in SND_BUF — enough for finishChunking()'s
+#   zero-length terminal chunk even with one unACKed chunk in-flight.
+#   Saving vs 2×MSS: 3 sockets × 2×(2920-1460) = 8760 B freed.
+#
+# WHY 3 sockets:
+#   Browser keeps 2 persistent HTTP keep-alive connections for API calls.
+#   WebSocket requires a 3rd persistent connection.
+#   With max_open_sockets=2 the WebSocket slot was never available → ws=0.
+#
+# lwIP TCP pbufs use MALLOC_CAP_INTERNAL (must be DRAM) so reducing max
+# in-flight data per socket directly frees DRAM.
+
+# ── lwIP TCP buffers ──────────────────────────────────────────────────────────
+# NOTE: arduino-esp32 framework uses a prebuilt ESP-IDF SDK and IGNORES the
+# overrides in this file. Real effective values (from the prebuilt sdkconfig
+# at tools/sdk/esp32/.../include/sdkconfig.h):
+#   CONFIG_LWIP_TCP_SND_BUF_DEFAULT   = 5760   (4 × MSS)
+#   CONFIG_LWIP_TCP_WND_DEFAULT       = 5760
+#   CONFIG_LWIP_UDP_RECVMBOX_SIZE     = 6
+#   CONFIG_LWIP_TCP_RECVMBOX_SIZE     = 6
+# This file's values are kept as documentation of what we *would* set if
+# building from raw ESP-IDF (e.g. via `idf.py`); they have no effect under
+# `pio run` because arduino-esp32 ships its lwIP precompiled. The WS init
+# protocol is now designed around the prebuilt mailbox=6 limit (bundled
+# init_ack message — see api.cpp onGet "init" handler).
+CONFIG_LWIP_TCP_SND_BUF_DEFAULT=1460
+CONFIG_LWIP_TCP_WND_DEFAULT=1460
+
+# Reduce TCP/UDP receive mailbox depth (default 6, no-op on prebuilt SDK).
+CONFIG_LWIP_TCP_RECVMBOX_SIZE=4
+CONFIG_LWIP_UDP_RECVMBOX_SIZE=4
+
+# ── WiFi DRAM savings ────────────────────────────────────────────────────────
+# WiFi static RX buffers: default 10 × 1600 B = 16 KB internal DRAM (MALLOC_CAP_DMA).
+# 4 buffers is sufficient for a dashboard with light HTTP/WS traffic; dropped frames
+# are recovered transparently by TCP retransmit.
+CONFIG_ESP_WIFI_STATIC_RX_BUFFER_NUM=4
+#
+# WiFi dynamic buffer counts: default 32 each; 16 is enough for low-traffic use,
+# limiting peak heap consumption during burst traffic.
+CONFIG_ESP_WIFI_DYNAMIC_RX_BUFFER_NUM=16
+CONFIG_ESP_WIFI_DYNAMIC_TX_BUFFER_NUM=16
+#
+# Move WiFi + lwIP hot code paths from IRAM → flash instruction cache.
+# IRAM and DRAM share SRAM1; reducing IRAM usage shifts the IRAM/DRAM boundary,
+# freeing ~10-20 KB of additional heap.  Throughput impact is negligible for
+# a dashboard serving small API responses and WebSocket events.
+CONFIG_ESP_WIFI_IRAM_OPT=n
+CONFIG_ESP_WIFI_RX_IRAM_OPT=n
+CONFIG_LWIP_IRAM_OPTIMIZATION=n
+
+# ── NimBLE DRAM savings ───────────────────────────────────────────────────────
+# NimBLE consumes ~53 KB of DRAM at init (host task stack + MBUF pools),
+# leaving only ~17 KB for lwIP + HTTP during web-UI page load.
+# The values below trim the most expensive pools while keeping BLE functional
+# for a single connected device (keyboard / companion).
+#
+# CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE: default 5120 → 4096 saves ~1024 B.
+#   The NimBLE host task stack requirement is ≈ 3.5 KB in typical use.
+#   4096 gives 512 B margin without risking stack overflow.
+CONFIG_BT_NIMBLE_HOST_TASK_STACK_SIZE=4096
+#
+# CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT: default 12 → 8 saves ~352 B.
+#   MSYS1 blocks are 292-byte MBUF pool entries used for ACL data fragments.
+#   8 blocks is sufficient for a single connected peripheral with ATT MTU=255.
+CONFIG_BT_NIMBLE_MSYS_1_BLOCK_COUNT=8
+#
+# CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL: move NimBLE HOST allocations to PSRAM.
+#   A BLE connection (L2CAP + ATT + SMP state) consumes ~9 KB of DRAM by default.
+#   With EXTERNAL mode, the host stack allocates from SPIRAM instead, freeing
+#   ~9 KB of DRAM per active connection for use by lwIP / HTTP.
+#   The BLE controller still uses DRAM (DMA requirement); only the host is affected.
+#   Requires SPIRAM (PSRAM) to be enabled — JC4827W543C has 8 MB PSRAM available.
+CONFIG_BT_NIMBLE_MEM_ALLOC_MODE_EXTERNAL=y

@@ -1,0 +1,211 @@
+name: Release
+
+# Triggers on platformio.ini or workflow edit pushed to master.
+# Builds the web SPA, pushes an orphan `dist` branch with web/dist + docs/,
+# tags that commit (CDN and Pages serve from it), then builds firmware and
+# attaches merged flash images to the GitHub Release.
+# main branch is never touched by this workflow.
+on:
+  push:
+    branches: [master]
+    paths:
+      - platformio.ini
+      - .github/workflows/release.yml
+
+permissions:
+  contents: write
+
+jobs:
+  release:
+    runs-on: ubuntu-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          token: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Init boards submodule
+        # Only boards/ is needed (custom board defs). NOT recursive: companion/
+        # is a gitlink without a .gitmodules URL and would fail submodule init.
+        run: git submodule update --init boards
+
+      - name: Read SPA_VERSION from platformio.ini
+        id: ver
+        run: |
+          V=$(grep -oP '(?<=custom_spa_version = )\S+' platformio.ini)
+          [[ "$V" == v* ]] || V="v$V"
+          echo "version=$V" >> $GITHUB_OUTPUT
+
+      # ── Web build ──────────────────────────────────────────────────────────
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: web/package-lock.json
+
+      - name: Install web deps
+        working-directory: web
+        run: npm ci
+
+      - name: Build SPA
+        working-directory: web
+        env:
+          SPA_VERSION: ${{ steps.ver.outputs.version }}
+        run: npm run build
+
+      # ── Push orphan dist branch (web/dist + docs) ──────────────────────────
+      # web/dist/ + docs/ live on the orphan `dist` branch, not on master.
+      # The version tag is placed on the dist-branch commit so jsdelivr serves
+      # the right assets. GitHub Pages is configured to serve from dist/docs.
+
+      - name: Configure git identity
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+      - name: Build and push dist branch
+        run: |
+          set -e
+          VER="${{ steps.ver.outputs.version }}"
+          # Firmware bins are served from GitHub Pages (dist branch /docs/firmware/).
+          # GitHub Release direct-download URLs redirect to release-assets.githubusercontent.com
+          # which lacks CORS headers, breaking browser fetch() in ESP Web Tools.
+          # GitHub Pages has Access-Control-Allow-Origin: * — no CORS issue.
+          PAGES_BASE="https://ange007.github.io/CYD-Dashboard/firmware"
+          TOKEN="${{ secrets.GITHUB_TOKEN }}"
+          REPO="${{ github.repository }}"
+
+          # ── Prepare dist content in a temp dir ──
+          STAGE=$(mktemp -d)
+          mkdir -p "$STAGE/web" "$STAGE/docs/firmware"
+
+          # Copy built SPA
+          cp -r web/dist "$STAGE/web/dist"
+
+          # Copy static flash page (never changes between releases)
+          cp docs/flash.html "$STAGE/docs/flash.html"
+
+          # Generate manifest.json for ESP Web Tools — bins served from Pages
+          cat > "$STAGE/docs/manifest.json" <<EOF
+          {
+            "name": "CYD Dashboard",
+            "version": "$VER",
+            "new_install_prompt_erase": true,
+            "builds": [
+              {
+                "chipFamily": "ESP32",
+                "parts": [{ "path": "$PAGES_BASE/cyd-dashboard-esp32-2432S028Rv2.bin", "offset": 0 }]
+              },
+              {
+                "chipFamily": "ESP32-S3",
+                "parts": [{ "path": "$PAGES_BASE/cyd-dashboard-JC4827W543C.bin", "offset": 0 }]
+              }
+            ]
+          }
+          EOF
+
+          # Save STAGE path for firmware step below
+          echo "STAGE=$STAGE" >> $GITHUB_ENV
+          echo "DIST_TOKEN=$TOKEN" >> $GITHUB_ENV
+          echo "DIST_REPO=$REPO" >> $GITHUB_ENV
+          echo "DIST_VER=$VER" >> $GITHUB_ENV
+
+      # ── Firmware build + merged flash images ───────────────────────────────
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Cache PlatformIO
+        uses: actions/cache@v4
+        with:
+          path: ~/.platformio
+          key: pio-${{ hashFiles('platformio.ini') }}
+          restore-keys: pio-
+
+      - name: Install PlatformIO + esptool
+        run: pip install platformio "esptool>=4,<5"
+
+      - name: Build firmware + merge images
+        env:
+          SPA_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -e
+          build_one() {
+            local ENV="$1" CHIP="$2" BLOFF="$3" FM="$4"
+            pio run -e "$ENV"
+            pio run -e "$ENV" -t buildfs
+            local BOOT_APP0
+            BOOT_APP0=$(find ~/.platformio -path '*framework-arduinoespressif32*' \
+                        -name boot_app0.bin | head -1)
+            echo "boot_app0: $BOOT_APP0"
+            local B=".pio/build/$ENV"
+            esptool.py --chip "$CHIP" merge_bin -o "cyd-dashboard-$ENV.bin" \
+              --flash_mode "$FM" --flash_size 4MB \
+              "$BLOFF" "$B/bootloader.bin" \
+              0x8000 "$B/partitions.bin" \
+              0xe000 "$BOOT_APP0" \
+              0x10000 "$B/firmware.bin" \
+              0x310000 "$B/littlefs.bin"
+            ls -la "cyd-dashboard-$ENV.bin"
+          }
+          build_one esp32-2432S028Rv2 esp32   0x1000 dio
+          build_one JC4827W543C       esp32s3 0x0    qio
+
+      # ── Push orphan dist branch (web/dist + docs + firmware bins) ──────────
+      # Bins served from GitHub Pages (CORS *). GitHub Release direct-download
+      # URLs redirect to release-assets.githubusercontent.com which has no CORS.
+
+      - name: Push dist branch
+        run: |
+          set -e
+          # Copy firmware bins into the staging area prepared in the web step
+          cp cyd-dashboard-esp32-2432S028Rv2.bin "$STAGE/docs/firmware/"
+          cp cyd-dashboard-JC4827W543C.bin        "$STAGE/docs/firmware/"
+
+          DIST_DIR=$(mktemp -d)
+          git clone --depth=1 \
+            "https://x-access-token:${DIST_TOKEN}@github.com/${DIST_REPO}.git" \
+            "$DIST_DIR" --no-local
+          cd "$DIST_DIR"
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+
+          git checkout --orphan dist
+          git rm -rf . --ignore-unmatch
+
+          cp -r "$STAGE/." .
+          git add web/dist/ docs/
+
+          git commit -m "dist: $DIST_VER"
+          git tag -f "$DIST_VER"
+
+          git push --force origin dist
+          git push --force origin "refs/tags/$DIST_VER"
+
+      # ── GitHub Release ─────────────────────────────────────────────────────
+
+      - name: Delete existing release (ignore if absent)
+        run: gh release delete "${{ steps.ver.outputs.version }}" --yes || true
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ steps.ver.outputs.version }}
+          name: ${{ steps.ver.outputs.version }}
+          generate_release_notes: true
+          files: |
+            cyd-dashboard-esp32-2432S028Rv2.bin
+            cyd-dashboard-JC4827W543C.bin
+
+      # ── Purge jsdelivr ─────────────────────────────────────────────────────
+
+      - name: Purge jsdelivr cache
+        run: |
+          VER="${{ steps.ver.outputs.version }}"
+          REPO="${{ github.repository }}"
+          curl -s "https://purge.jsdelivr.net/gh/${REPO}@${VER}/web/dist/assets/app.js" || true
