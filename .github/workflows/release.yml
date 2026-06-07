@@ -109,6 +109,8 @@ jobs:
           mkdir -p "$STAGE/web" "$STAGE/docs/firmware"
           cp -r web/dist "$STAGE/web/dist"
           cp docs/flash.html "$STAGE/docs/flash.html"
+          cp docs/index.html "$STAGE/docs/index.html"
+          cp -r docs/screenshots "$STAGE/docs/screenshots"
 
           MANIFEST_BUILDS=""
           while read -r ENV CHIP BLOFF FAMILY; do
