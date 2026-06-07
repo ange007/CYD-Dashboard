@@ -24,6 +24,7 @@ public:
         bool macro_rerender = false; // → _pending_macro_cols
         bool masonry        = false; // → _pending_masonry
         bool bt_en          = false; bool bt_en_v = true; // → HidKeyboard::applyBluetoothEnabled
+        bool keyboard_tab   = false; bool keyboard_tab_v = false; // → applyKeyboardTabEnabled
         cJSON* update       = nullptr; // WS broadcast JSON — caller must cJSON_Delete
     };
 
@@ -134,6 +135,13 @@ public:
     // ── Bluetooth / HID backend ───────────────────────────────────────────────
     static bool getBluetoothEnabled();         // true = BLE allowed (default)
     static void setBluetoothEnabled(bool on);  // NVS write + cache update
+    static int  getHidTargetOs();              // 0=Windows, 1=macOS, 2=Linux
+    static void setHidTargetOs(int os);        // NVS write + cache update
+
+    // ── Keyboard tab visibility ───────────────────────────────────────────────
+    static bool getKeyboardTabEnabled();       // true = KB tab shown (default false)
+    static void setKeyboardTabEnabled(bool on);// NVS write + cache update
+    static void applyKeyboardTabEnabled(bool on); // LVGL only — show/hide tab button
     static int  getMacroBorderColor();          // 0=no border, otherwise 24-bit RGB
     static void setMacroBorderColor(int rgb);
 

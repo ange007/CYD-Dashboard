@@ -125,6 +125,14 @@ async function onDelete(id: string) {
   profiles.value = profiles.value.filter(p => p.id !== id);
   if (activeId.value === id) activeId.value = '';
   await onSave();
+  // Scrub the deleted profile's id from macro/widget visibility lists so scenes
+  // don't get stuck hidden behind an orphaned profile_ids reference.
+  try {
+    await macrosStore.removeProfileRef(id);
+    await widgetsStore.removeProfileRef(id);
+  } catch (e: any) {
+    error.value = e.message ?? 'Failed to clean profile references';
+  }
 }
 
 async function onActivate(id: string) {

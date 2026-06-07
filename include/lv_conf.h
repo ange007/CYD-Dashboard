@@ -337,7 +337,11 @@
  * Others
  *----------*/
 
+#ifdef ENABLE_SCREENSHOT_ENDPOINT
+#define LV_USE_SNAPSHOT 1   /* temporary: /api/screenshot capture (build flag) */
+#else
 #define LV_USE_SNAPSHOT 0
+#endif
 #define LV_USE_MONKEY 0
 #define LV_USE_GRIDNAV 0
 #define LV_USE_FRAGMENT 0

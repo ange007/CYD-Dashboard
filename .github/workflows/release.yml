@@ -1,10 +1,22 @@
 name: Release
 
 # Triggers on platformio.ini or workflow edit pushed to master.
-# Builds the web SPA, pushes an orphan `dist` branch with web/dist + docs/,
-# tags that commit (CDN and Pages serve from it), then builds firmware and
-# attaches merged flash images to the GitHub Release.
-# main branch is never touched by this workflow.
+# Builds the web SPA + per-board firmware, merges each into one flashable image,
+# pushes an orphan `dist` branch (web/dist + docs + firmware bins) tagged with
+# the version, and creates a GitHub Release. master is never touched.
+#
+# ── Adding a board ─────────────────────────────────────────────────────────
+# Append ONE line to the BOARDS list in the "Build firmware" step:
+#     <pio-env>  <chip>  <bootloader-offset>  <ESP-Web-Tools-chipFamily>
+#   - pio-env            : an [env:…] in platformio.ini (must build cleanly)
+#   - chip               : esptool --chip value (esp32, esp32s3, esp32c3, …)
+#   - bootloader-offset  : 0x1000 for ESP32, 0x0 for S3/C3/C6/H2/P4
+#   - chipFamily         : ESP Web Tools string (ESP32, ESP32-S3, ESP32-C3, …)
+# Assumes huge_app.csv partitions (app@0x10000, littlefs@0x310000) — adjust the
+# merge offsets below if a board uses a different table.
+# flash mode/freq/size are kept from the PlatformIO build (do NOT override —
+# wrong freq bricks S3+OPI-PSRAM boards). The bins list + manifest + release
+# assets are all derived from BOARDS, so one line is all it takes.
 on:
   push:
     branches: [master]
@@ -26,8 +38,8 @@ jobs:
           token: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Init boards submodule
-        # Only boards/ is needed (custom board defs). NOT recursive: companion/
-        # is a gitlink without a .gitmodules URL and would fail submodule init.
+        # Only boards/ (custom board defs). NOT recursive: companion/ is not a
+        # tracked submodule and recursive init would fail.
         run: git submodule update --init boards
 
       - name: Read SPA_VERSION from platformio.ini
@@ -55,64 +67,7 @@ jobs:
           SPA_VERSION: ${{ steps.ver.outputs.version }}
         run: npm run build
 
-      # ── Push orphan dist branch (web/dist + docs) ──────────────────────────
-      # web/dist/ + docs/ live on the orphan `dist` branch, not on master.
-      # The version tag is placed on the dist-branch commit so jsdelivr serves
-      # the right assets. GitHub Pages is configured to serve from dist/docs.
-
-      - name: Configure git identity
-        run: |
-          git config user.name "github-actions[bot]"
-          git config user.email "github-actions[bot]@users.noreply.github.com"
-
-      - name: Build and push dist branch
-        run: |
-          set -e
-          VER="${{ steps.ver.outputs.version }}"
-          # Firmware bins are served from GitHub Pages (dist branch /docs/firmware/).
-          # GitHub Release direct-download URLs redirect to release-assets.githubusercontent.com
-          # which lacks CORS headers, breaking browser fetch() in ESP Web Tools.
-          # GitHub Pages has Access-Control-Allow-Origin: * — no CORS issue.
-          PAGES_BASE="https://ange007.github.io/CYD-Dashboard/firmware"
-          TOKEN="${{ secrets.GITHUB_TOKEN }}"
-          REPO="${{ github.repository }}"
-
-          # ── Prepare dist content in a temp dir ──
-          STAGE=$(mktemp -d)
-          mkdir -p "$STAGE/web" "$STAGE/docs/firmware"
-
-          # Copy built SPA
-          cp -r web/dist "$STAGE/web/dist"
-
-          # Copy static flash page (never changes between releases)
-          cp docs/flash.html "$STAGE/docs/flash.html"
-
-          # Generate manifest.json for ESP Web Tools — bins served from Pages
-          cat > "$STAGE/docs/manifest.json" <<EOF
-          {
-            "name": "CYD Dashboard",
-            "version": "$VER",
-            "new_install_prompt_erase": true,
-            "builds": [
-              {
-                "chipFamily": "ESP32",
-                "parts": [{ "path": "$PAGES_BASE/cyd-dashboard-esp32-2432S028Rv2.bin", "offset": 0 }]
-              },
-              {
-                "chipFamily": "ESP32-S3",
-                "parts": [{ "path": "$PAGES_BASE/cyd-dashboard-JC4827W543C.bin", "offset": 0 }]
-              }
-            ]
-          }
-          EOF
-
-          # Save STAGE path for firmware step below
-          echo "STAGE=$STAGE" >> $GITHUB_ENV
-          echo "DIST_TOKEN=$TOKEN" >> $GITHUB_ENV
-          echo "DIST_REPO=$REPO" >> $GITHUB_ENV
-          echo "DIST_VER=$VER" >> $GITHUB_ENV
-
-      # ── Firmware build + merged flash images ───────────────────────────────
+      # ── Firmware toolchain ─────────────────────────────────────────────────
 
       - uses: actions/setup-python@v5
         with:
@@ -128,64 +83,76 @@ jobs:
       - name: Install PlatformIO + esptool
         run: pip install platformio "esptool>=4,<5"
 
-      - name: Build firmware + merge images
+      # ── Build firmware + assemble dist branch ──────────────────────────────
+
+      - name: Build firmware, dist branch and manifest
         env:
           SPA_VERSION: ${{ steps.ver.outputs.version }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -e
-          build_one() {
-            local ENV="$1" CHIP="$2" BLOFF="$3" FM="$4"
+          VER="${{ steps.ver.outputs.version }}"
+          REPO="${{ github.repository }}"
+          OWNER="${REPO%%/*}"; NAME="${REPO##*/}"
+          PAGES_BASE="https://${OWNER}.github.io/${NAME}/firmware"
+
+          # ── Board list — single source of truth (see header for format) ──
+          BOARDS="
+          esp32-2432S028Rv2 esp32   0x1000 ESP32
+          JC4827W543C       esp32s3 0x0    ESP32-S3
+          "
+
+          BOOT_APP0=$(find ~/.platformio -path '*framework-arduinoespressif32*' -name boot_app0.bin | head -1)
+          echo "boot_app0: $BOOT_APP0"
+
+          STAGE=$(mktemp -d)
+          mkdir -p "$STAGE/web" "$STAGE/docs/firmware"
+          cp -r web/dist "$STAGE/web/dist"
+          cp docs/flash.html "$STAGE/docs/flash.html"
+
+          MANIFEST_BUILDS=""
+          while read -r ENV CHIP BLOFF FAMILY; do
+            [ -z "$ENV" ] && continue
+            echo "=== building $ENV ($CHIP, $FAMILY) ==="
             pio run -e "$ENV"
             pio run -e "$ENV" -t buildfs
-            local BOOT_APP0
-            BOOT_APP0=$(find ~/.platformio -path '*framework-arduinoespressif32*' \
-                        -name boot_app0.bin | head -1)
-            echo "boot_app0: $BOOT_APP0"
-            local B=".pio/build/$ENV"
-            esptool.py --chip "$CHIP" merge_bin -o "cyd-dashboard-$ENV.bin" \
-              --flash_mode "$FM" --flash_size 4MB \
+            B=".pio/build/$ENV"
+            BIN="cyd-dashboard-$ENV.bin"
+            # keep flash mode/freq/size from the PlatformIO bootloader header —
+            # overriding (esp. freq) bricks S3+OPI-PSRAM boards.
+            esptool.py --chip "$CHIP" merge_bin -o "$BIN" \
+              --flash_mode keep --flash_freq keep --flash_size keep \
               "$BLOFF" "$B/bootloader.bin" \
-              0x8000 "$B/partitions.bin" \
-              0xe000 "$BOOT_APP0" \
-              0x10000 "$B/firmware.bin" \
+              0x8000   "$B/partitions.bin" \
+              0xe000   "$BOOT_APP0" \
+              0x10000  "$B/firmware.bin" \
               0x310000 "$B/littlefs.bin"
-            ls -la "cyd-dashboard-$ENV.bin"
-          }
-          build_one esp32-2432S028Rv2 esp32   0x1000 dio
-          build_one JC4827W543C       esp32s3 0x0    qio
+            cp "$BIN" "$STAGE/docs/firmware/"
+            [ -n "$MANIFEST_BUILDS" ] && MANIFEST_BUILDS="$MANIFEST_BUILDS,"
+            MANIFEST_BUILDS="$MANIFEST_BUILDS{\"chipFamily\":\"$FAMILY\",\"parts\":[{\"path\":\"$PAGES_BASE/$BIN\",\"offset\":0}]}"
+          done <<< "$BOARDS"
 
-      # ── Push orphan dist branch (web/dist + docs + firmware bins) ──────────
-      # Bins served from GitHub Pages (CORS *). GitHub Release direct-download
-      # URLs redirect to release-assets.githubusercontent.com which has no CORS.
+          cat > "$STAGE/docs/manifest.json" <<EOF
+          { "name": "CYD Dashboard", "version": "$VER", "new_install_prompt_erase": true, "builds": [ $MANIFEST_BUILDS ] }
+          EOF
+          echo "--- manifest ---"; cat "$STAGE/docs/manifest.json"
 
-      - name: Push dist branch
-        run: |
-          set -e
-          # Copy firmware bins into the staging area prepared in the web step
-          cp cyd-dashboard-esp32-2432S028Rv2.bin "$STAGE/docs/firmware/"
-          cp cyd-dashboard-JC4827W543C.bin        "$STAGE/docs/firmware/"
-
-          DIST_DIR=$(mktemp -d)
-          git clone --depth=1 \
-            "https://x-access-token:${DIST_TOKEN}@github.com/${DIST_REPO}.git" \
-            "$DIST_DIR" --no-local
-          cd "$DIST_DIR"
+          # ── Push orphan dist branch + tag (CDN + Pages serve from here) ──
+          DIST=$(mktemp -d)
+          git clone --depth=1 "https://x-access-token:${GH_TOKEN}@github.com/${REPO}.git" "$DIST" --no-local
+          cd "$DIST"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-
           git checkout --orphan dist
-          git rm -rf . --ignore-unmatch
-
+          git rm -rf . --ignore-unmatch >/dev/null
           cp -r "$STAGE/." .
           git add web/dist/ docs/
-
-          git commit -m "dist: $DIST_VER"
-          git tag -f "$DIST_VER"
-
+          git commit -q -m "dist: $VER"
+          git tag -f "$VER"
           git push --force origin dist
-          git push --force origin "refs/tags/$DIST_VER"
+          git push --force origin "refs/tags/$VER"
 
-      # ── GitHub Release ─────────────────────────────────────────────────────
+      # ── GitHub Release (all built bins via glob) ───────────────────────────
 
       - name: Delete existing release (ignore if absent)
         run: gh release delete "${{ steps.ver.outputs.version }}" --yes || true
@@ -198,14 +165,10 @@ jobs:
           tag_name: ${{ steps.ver.outputs.version }}
           name: ${{ steps.ver.outputs.version }}
           generate_release_notes: true
-          files: |
-            cyd-dashboard-esp32-2432S028Rv2.bin
-            cyd-dashboard-JC4827W543C.bin
+          files: cyd-dashboard-*.bin
 
       # ── Purge jsdelivr ─────────────────────────────────────────────────────
 
       - name: Purge jsdelivr cache
         run: |
-          VER="${{ steps.ver.outputs.version }}"
-          REPO="${{ github.repository }}"
-          curl -s "https://purge.jsdelivr.net/gh/${REPO}@${VER}/web/dist/assets/app.js" || true
+          curl -s "https://purge.jsdelivr.net/gh/${{ github.repository }}@${{ steps.ver.outputs.version }}/web/dist/assets/app.js" || true

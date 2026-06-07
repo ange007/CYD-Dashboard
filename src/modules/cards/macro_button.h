@@ -25,6 +25,9 @@ public:
     // Only applies when shadow is enabled AND radius == 0 (rounded shadow = LVGL OOM).
     static void restoreShadows(void* container);
 
+    // Returns true if this macro type requires an active HID connection to fire.
+    static bool needsHid(cJSON* item);
+
     // Create button + optional title-below wrapper based on settings.
     // Adds the resulting cell to parent and returns it.
     // *outBtn receives the actual button (may differ from cell when title is below).

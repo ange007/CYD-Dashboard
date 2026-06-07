@@ -41,15 +41,25 @@ function _scheduleStateRefresh() {
   }, 150);
 }
 
-// Redirect to proxy page with a reason param, so proxy can show context.
-// Only redirect once per session to avoid loops if proxy page itself fails.
-let _redirected = false;
-function _redirectToProxy(reason: string) {
-  if (_redirected) return;
-  _redirected = true;
-  try { sessionStorage.setItem('cyd_svc_reason', reason); } catch {}
-  console.warn('[SVC] redirect to proxy:', reason);
+// Redirect to proxy page when the device exits service mode (normal mode ↔
+// service mode transitions). Only used for not_in_service_mode / save_ack errors
+// where the device is truly no longer in service mode and the CDN SPA should be
+// served instead.
+// NOT used for service_mode_denied — see _svcDeniedListeners below.
+function _redirectToProxy() {
+  console.warn('[SVC] device left service mode — reloading');
   window.location.href = '/';
+}
+
+// Listeners notified when this client is denied service mode ownership (another
+// session holds it). UI should show a read-only banner instead of redirecting.
+const _svcDeniedListeners = new Set<() => void>();
+export function onServiceModeDenied(cb: () => void): () => void {
+  _svcDeniedListeners.add(cb);
+  return () => _svcDeniedListeners.delete(cb);
+}
+function _notifyDenied() {
+  _svcDeniedListeners.forEach(fn => { try { fn(); } catch { /* ignore */ } });
 }
 
 function _jsonGetPath(obj: any, path: string): any {
@@ -145,15 +155,14 @@ export function connectWs(baseUrl: string) {
       if (msg.active === true && msg.token) _setSvcToken(msg.token);
       else if (msg.active === false)         _setSvcToken('');
     } else if (msg.action === 'service_mode_denied') {
-      // Another client owns service mode and our token doesn't match.
-      // Clear stale token, send user to proxy page to re-enter cleanly.
+      // Another session owns service mode. Notify UI to show read-only mode.
       _setSvcToken('');
-      _redirectToProxy('session_taken_by_another_device');
+      _notifyDenied();
     } else if (msg.action === 'save_ack' && msg.ok === false &&
                msg.error === 'not_in_service_mode') {
-      // Save was rejected — our session expired or another client took over.
+      // Save was rejected — session expired, device left service mode.
       _setSvcToken('');
-      _redirectToProxy('session_expired');
+      _redirectToProxy();
     } else if (msg.action === 'state_changed') {
       // Device mutated some domain (macros/widgets/profiles/settings) —
       // drop the cached init promise and trigger a background refresh so

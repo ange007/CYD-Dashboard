@@ -550,6 +550,103 @@ void PsychicHttpImpl::start()
         NetDiag::httpOk++; return res->send(200, "application/json", buf);
     });
 
+#ifdef ENABLE_SCREENSHOT_ENDPOINT
+    // ── /api/screenshot ── capture the active LVGL screen as a 24-bit BMP ──────
+    // Temporary tooling for docs screenshots. Enabled only with
+    // -D ENABLE_SCREENSHOT_ENDPOINT (also flips LV_USE_SNAPSHOT in lv_conf.h).
+    // Pixel buffer allocated in PSRAM (W*H*2 ≈ 255 KB for 480×272) — DRAM is too
+    // small. lv_draw_buf_init + lv_snapshot_take_to_draw_buf avoids lv_malloc.
+    _server.on("/api/screenshot", HTTP_GET,
+               [this](PsychicRequest *req, PsychicResponse *res) -> esp_err_t {
+        // Screen dimensions: read under LVGL lock (brief).
+        _ui_enable_mutex(1);
+        const uint32_t w = (uint32_t)lv_obj_get_width(lv_screen_active());
+        const uint32_t h = (uint32_t)lv_obj_get_height(lv_screen_active());
+        _ui_disable_mutex(1);
+
+        const uint32_t srcStride = (w * 2u + 3u) & ~3u;
+        const uint32_t pixBytes  = srcStride * h;
+
+        // Allocate pixel buffer in PSRAM (480×272×2 ≈ 255 KB — won't fit in DRAM).
+        uint8_t* pixBuf = (uint8_t*)heap_caps_malloc(pixBytes, MALLOC_CAP_SPIRAM | MALLOC_CAP_8BIT);
+        if (!pixBuf) {
+            ESP_LOGE("HTTP", "screenshot: PSRAM alloc failed (%u bytes)", (unsigned)pixBytes);
+            return res->send(507, "application/json", "{\"error\":\"snapshot failed\"}");
+        }
+
+        // lv_snapshot_take_to_draw_buf must run in the LVGL task (main loop).
+        // We post a request via semaphore and wait — loop() picks it up each tick.
+        while (!_screenshotCtx.trigger) vTaskDelay(pdMS_TO_TICKS(10));  // wait for lazy init
+        _screenshotCtx.pixBuf  = pixBuf;
+        _screenshotCtx.w       = w;
+        _screenshotCtx.h       = h;
+        _screenshotCtx.stride  = srcStride;
+        _screenshotCtx.ok      = false;
+        xSemaphoreGive(_screenshotCtx.trigger);
+
+        if (xSemaphoreTake(_screenshotCtx.done, pdMS_TO_TICKS(5000)) != pdTRUE || !_screenshotCtx.ok) {
+            heap_caps_free(pixBuf);
+            ESP_LOGE("HTTP", "screenshot: snapshot timed out or failed");
+            return res->send(507, "application/json", "{\"error\":\"snapshot failed\"}");
+        }
+
+        const uint32_t rowSize   = (w * 3u + 3u) & ~3u;       // BMP rows padded to 4 bytes
+        const uint32_t imgSize   = rowSize * h;
+        const uint32_t fileSize  = 54u + imgSize;
+
+        // 14-byte BITMAPFILEHEADER + 40-byte BITMAPINFOHEADER, little-endian.
+        uint8_t hdr[54] = {0};
+        hdr[0] = 'B'; hdr[1] = 'M';
+        hdr[2]  = fileSize;       hdr[3]  = fileSize >> 8;  hdr[4]  = fileSize >> 16; hdr[5]  = fileSize >> 24;
+        hdr[10] = 54;             // pixel data offset
+        hdr[14] = 40;             // DIB header size
+        hdr[18] = w;  hdr[19] = w >> 8;  hdr[20] = w >> 16; hdr[21] = w >> 24;
+        hdr[22] = h;  hdr[23] = h >> 8;  hdr[24] = h >> 16; hdr[25] = h >> 24;
+        hdr[26] = 1;              // color planes
+        hdr[28] = 24;             // bits per pixel
+        hdr[34] = imgSize; hdr[35] = imgSize >> 8; hdr[36] = imgSize >> 16; hdr[37] = imgSize >> 24;
+
+        // One padded BMP row (DRAM, small: e.g. 480*3 ≈ 1.5 KB).
+        uint8_t* row = (uint8_t*)malloc(rowSize);
+        if (!row) {
+            heap_caps_free(pixBuf);
+            return res->send(507, "application/json", "{\"error\":\"row OOM\"}");
+        }
+        memset(row, 0, rowSize);
+
+        res->setCode(200);
+        res->setContentType("image/bmp");
+        res->addHeader("Content-Disposition", "inline; filename=\"cyd-screenshot.bmp\"");
+        res->sendHeaders();
+
+        esp_err_t err = res->sendChunk(hdr, sizeof(hdr));
+
+        // BMP scanlines are stored bottom-up — emit rows from last to first.
+        for (int32_t y = (int32_t)h - 1; y >= 0 && err == ESP_OK; y--) {
+            const uint8_t* src = pixBuf + (uint32_t)y * srcStride;
+            uint8_t* dst = row;
+            for (uint32_t x = 0; x < w; x++) {
+                uint16_t px = (uint16_t)src[0] | ((uint16_t)src[1] << 8);  // RGB565, little-endian
+                src += 2;
+                uint8_t r5 = (px >> 11) & 0x1F;
+                uint8_t g6 = (px >> 5)  & 0x3F;
+                uint8_t b5 =  px        & 0x1F;
+                // Expand to 8-bit with bit replication; BMP pixel order is BGR.
+                *dst++ = (b5 << 3) | (b5 >> 2);
+                *dst++ = (g6 << 2) | (g6 >> 4);
+                *dst++ = (r5 << 3) | (r5 >> 2);
+            }
+            err = res->sendChunk(row, rowSize);
+        }
+        if (err == ESP_OK) err = res->finishChunking();
+
+        free(row);
+        heap_caps_free(pixBuf);
+        if (err == ESP_OK) NetDiag::httpOk++;
+        return err;
+    });
+#endif // ENABLE_SCREENSHOT_ENDPOINT
+
     // ── /api/init ─────────────────────────────────────────────────────────
     _server.on("/api/init", HTTP_GET,
                [this](PsychicRequest *req, PsychicResponse *res) -> esp_err_t {

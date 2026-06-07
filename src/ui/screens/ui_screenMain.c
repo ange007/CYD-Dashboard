@@ -48,6 +48,7 @@ void ui_screenMain_screen_init(void)
     //
     ui_macrosTab_init(ui_tabsMain);
     ui_widgetsTab_init(ui_tabsMain);
+    ui_keyboardTab_init(ui_tabsMain);
 
     //
     ui_bottomPanel_init(ui_screenMain);
@@ -105,6 +106,59 @@ void ui_widgetsTab_init(lv_obj_t *comp_parent)
     lv_obj_set_style_pad_bottom(ui_cntWidgets, 10, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_row(ui_cntWidgets, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
     lv_obj_set_style_pad_column(ui_cntWidgets, 5, LV_PART_MAIN | LV_STATE_DEFAULT);
+}
+
+void ui_keyboardTab_init(lv_obj_t *comp_parent)
+{
+    ui_tabKeyboard = lv_tabview_add_tab(comp_parent, LV_SYMBOL_KEYBOARD);
+
+    // Disabled + invisible by default — refreshHidButtonStates() enables when HID connects.
+    {
+        lv_obj_t* tab_bar = lv_tabview_get_tab_bar(comp_parent);
+        if (tab_bar) {
+            lv_obj_t* btn = lv_obj_get_child(tab_bar, lv_obj_get_child_count(tab_bar) - 1);
+            if (btn) {
+                lv_obj_add_state(btn, LV_STATE_DISABLED);
+                lv_obj_set_style_opa(btn, LV_OPA_TRANSP, LV_PART_MAIN | LV_STATE_DISABLED);
+            }
+        }
+    }
+
+    ui_object_set_themeable_style_property(ui_tabKeyboard, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_background);
+    ui_object_set_themeable_style_property(ui_tabKeyboard, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_OPA, _ui_theme_alpha_background);
+    lv_obj_set_style_pad_all(ui_tabKeyboard, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t* kb = lv_keyboard_create(ui_tabKeyboard);
+    lv_obj_set_size(kb, lv_pct(100), lv_pct(100));
+
+    // Keyboard container background
+    lv_obj_set_style_border_width(kb, 0, LV_PART_MAIN | LV_STATE_DEFAULT);
+    ui_object_set_themeable_style_property(kb, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR, _ui_theme_color_panelBackground);
+    ui_object_set_themeable_style_property(kb, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_BG_OPA,   _ui_theme_alpha_panelBackground);
+
+    // Button items — default state
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DEFAULT, LV_STYLE_BG_COLOR,   _ui_theme_color_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DEFAULT, LV_STYLE_BG_OPA,     _ui_theme_alpha_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DEFAULT, LV_STYLE_TEXT_COLOR, _ui_theme_color_buttonText);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DEFAULT, LV_STYLE_TEXT_OPA,   _ui_theme_alpha_buttonText);
+
+    // Button items — pressed state
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_PRESSED, LV_STYLE_BG_COLOR,   _ui_theme_color_pressed_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_PRESSED, LV_STYLE_BG_OPA,     _ui_theme_alpha_pressed_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_PRESSED, LV_STYLE_TEXT_COLOR, _ui_theme_color_pressed_buttonText);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_PRESSED, LV_STYLE_TEXT_OPA,   _ui_theme_alpha_pressed_buttonText);
+
+    // Button items — checked state (Shift active, mode-toggle buttons)
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_BG_COLOR,   _ui_theme_color_pressed_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_CHECKED, LV_STYLE_BG_OPA,     _ui_theme_alpha_pressed_button);
+
+    // Button items — disabled state (used by special no-op buttons in the map)
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DISABLED, LV_STYLE_BG_COLOR,   _ui_theme_color_disabled_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DISABLED, LV_STYLE_BG_OPA,     _ui_theme_alpha_disabled_button);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DISABLED, LV_STYLE_TEXT_COLOR, _ui_theme_color_disabled_buttonText);
+    ui_object_set_themeable_style_property(kb, LV_PART_ITEMS | LV_STATE_DISABLED, LV_STYLE_TEXT_OPA,   _ui_theme_alpha_disabled_buttonText);
+
+    lv_obj_add_event_cb(kb, OnVirtualKeyboardEvent, LV_EVENT_VALUE_CHANGED, NULL);
 }
 
 void ui_bottomPanel_init(lv_obj_t * comp_parent)

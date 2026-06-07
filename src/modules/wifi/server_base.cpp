@@ -24,6 +24,7 @@
 #include "../hid/keyboard.h"
 #include "../../modules/timers.h"
 
+
 namespace WiFiModule
 {
 
@@ -96,6 +97,7 @@ void WebServerBase::applySettingsResult(const uSettings::SettingsApplyResult& r)
     if (r.masonry)          _pending_masonry = true;
     if (r.bt_en)            { HidKeyboard::applyBluetoothEnabled(r.bt_en_v);
                               _pending_bt_en_ui_v = r.bt_en_v; _pending_bt_en_ui = true; }
+    if (r.keyboard_tab)     { _pending_keyboard_tab_v = r.keyboard_tab_v; _pending_keyboard_tab = true; }
 }
 
 void WebServerBase::triggerSceneBgReload()
@@ -149,6 +151,7 @@ cJsonPtr WebServerBase::buildSettingsJson()
         cJSON_AddBoolToObject  (s, "macro_shadow",       prefs.getBool("macro_shadow", SETTINGS_DEFAULT_MACRO_SHADOW != 0));
         cJSON_AddNumberToObject(s, "macro_brd_clr",   prefs.getInt("macro_brd_clr", SETTINGS_DEFAULT_MACRO_BORDER_CLR));
         cJSON_AddBoolToObject  (s, "bt_en",            prefs.getBool("bt_en", true));
+        cJSON_AddBoolToObject  (s, "keyboard_tab",     prefs.getBool("keyboard_tab", false));
     });
 #ifdef OTA_ENABLED
     cJSON_AddBoolToObject(s.get(), "ota_enabled", true);
@@ -836,6 +839,16 @@ void WebServerBase::loop()
         else                     lv_obj_clear_state(ui_swBluetooth, LV_STATE_CHECKED);
     }
 
+    if (_pending_keyboard_tab)
+    {
+        _pending_keyboard_tab = false;
+        _ui_enable_mutex(1);
+        uSettings::applyKeyboardTabEnabled(_pending_keyboard_tab_v);
+        _ui_disable_mutex(1);
+        if (_pending_keyboard_tab_v) lv_obj_add_state(ui_swKeyboardTab, LV_STATE_CHECKED);
+        else                         lv_obj_clear_state(ui_swKeyboardTab, LV_STATE_CHECKED);
+    }
+
     if (_pending_mdns_restart)
     {
         _pending_mdns_restart = false;
@@ -925,6 +938,24 @@ void WebServerBase::loop()
         _pending_widgets_timer_resume = false;
         Cards::Widgets::armTimersOnly();
     }
+
+#ifdef ENABLE_SCREENSHOT_ENDPOINT
+    // Lazy-init screenshot semaphores on first loop() call (main task context).
+    if (!_screenshotCtx.trigger) {
+        _screenshotCtx.trigger = xSemaphoreCreateBinary();
+        _screenshotCtx.done    = xSemaphoreCreateBinary();
+    }
+    // If HTTP handler queued a snapshot request, render it here (LVGL task context).
+    if (_screenshotCtx.trigger && xSemaphoreTake(_screenshotCtx.trigger, 0) == pdTRUE) {
+        lv_obj_t* scr = lv_screen_active();
+        lv_draw_buf_t db;
+        lv_draw_buf_init(&db, _screenshotCtx.w, _screenshotCtx.h,
+                         LV_COLOR_FORMAT_RGB565, _screenshotCtx.stride,
+                         _screenshotCtx.pixBuf, _screenshotCtx.stride * _screenshotCtx.h);
+        _screenshotCtx.ok = (lv_snapshot_take_to_draw_buf(scr, LV_COLOR_FORMAT_RGB565, &db) == LV_RESULT_OK);
+        xSemaphoreGive(_screenshotCtx.done);
+    }
+#endif
 }
 
 } // namespace WiFiModule

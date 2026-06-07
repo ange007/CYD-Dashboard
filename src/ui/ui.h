@@ -35,6 +35,11 @@ extern lv_obj_t * ui_Chart1;
 
 extern lv_obj_t * ui_tabMacros;
 extern lv_obj_t * ui_cntMacros;
+extern lv_obj_t * ui_tabKeyboard;
+
+void ui_macrosTab_init(lv_obj_t * comp_parent);
+void ui_widgetsTab_init(lv_obj_t * comp_parent);
+void ui_keyboardTab_init(lv_obj_t * comp_parent);
 
 extern lv_obj_t * ui_pnlStatus;
 extern lv_obj_t * ui_pnlStatusLeft;
@@ -109,6 +114,8 @@ extern lv_obj_t * ui_swReverseColor;
 extern lv_obj_t * ui_sliderBrightness;
 extern lv_obj_t * ui_swBluetooth;
 void ui_event_swBluetooth(lv_event_t * e);
+extern lv_obj_t * ui_swKeyboardTab;
+extern lv_obj_t * ui_dropdownHidOs;
 extern lv_obj_t * ui_cntSettingsBottom;
 void ui_event_btnSettingsClose(lv_event_t * e);
 extern lv_obj_t * ui_btnSettingsClose;

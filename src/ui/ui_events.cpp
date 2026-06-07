@@ -405,3 +405,74 @@ void ui_event_swBluetooth(lv_event_t * e) {
     HidKeyboard::applyBluetoothEnabled(on);
     WiFiModule::WSServer::broadcastSettingInt("bt_en", on ? 1 : 0);
 }
+
+void ui_event_swKeyboardTab(lv_event_t * e) {
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+    bool on = lv_obj_has_state(lv_event_get_target_obj(e), LV_STATE_CHECKED);
+    if (on == uSettings::getKeyboardTabEnabled()) return;
+    uSettings::setKeyboardTabEnabled(on);
+    uSettings::applyKeyboardTabEnabled(on);  // already in LVGL context
+    WiFiModule::WSServer::broadcastSettingInt("keyboard_tab", on ? 1 : 0);
+}
+
+void ui_event_dropdownHidOs(lv_event_t * e) {
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+    int v = (int)lv_dropdown_get_selected(lv_event_get_target_obj(e));
+    if (v == uSettings::getHidTargetOs()) return;
+    uSettings::setHidTargetOs(v);
+    WiFiModule::WSServer::broadcastSettingInt("hid_target_os", v);
+}
+
+void OnVirtualKeyboardEvent(lv_event_t * e) {
+    if (lv_event_get_code(e) != LV_EVENT_VALUE_CHANGED) return;
+    if (!HidKeyboard::isConnected()) return;
+    lv_obj_t* kb = lv_event_get_target_obj(e);
+    uint32_t  btn_id = lv_btnmatrix_get_selected_btn(kb);
+    const char* txt  = lv_keyboard_get_btn_text(kb, btn_id);
+    if (!txt || txt[0] == '\0') return;
+
+    // Helper: press single named key (KEY_xxx) + enqueue release
+    auto pressKey = [](const char* name) {
+        char buf[24];
+        snprintf(buf, sizeof(buf), "KEY_%s", name);
+        HidKeyboard::press(buf);
+        HidKeyboard::releaseAll();
+    };
+
+    if (strcmp(txt, LV_SYMBOL_BACKSPACE) == 0) {
+        pressKey("BACKSPACE");
+    } else if (strcmp(txt, LV_SYMBOL_OK) == 0) {
+        pressKey("RETURN");
+    } else if (strcmp(txt, LV_SYMBOL_NEW_LINE) == 0) {
+        // New-line button = Ctrl+Enter (insert newline vs. confirm)
+        char mod[] = "KEY_LEFT_CTRL";
+        char key[] = "KEY_RETURN";
+        HidKeyboard::press(mod);
+        HidKeyboard::press(key);
+        HidKeyboard::releaseAll();
+    } else if (strcmp(txt, LV_SYMBOL_LEFT) == 0) {
+        pressKey("LEFT_ARROW");
+    } else if (strcmp(txt, LV_SYMBOL_RIGHT) == 0) {
+        pressKey("RIGHT_ARROW");
+    } else if (strcmp(txt, LV_SYMBOL_CLOSE) == 0) {
+        pressKey("ESC");
+    } else if (strcmp(txt, LV_SYMBOL_KEYBOARD) == 0) {
+        // Language/input-source switch — OS-specific shortcut.
+        // Windows/Linux: GUI+Space; macOS: Ctrl+Space (default input source switch).
+        // Use literal " " for Space — "KEY_SPACE" is not in the key map and resolves to 0.
+        int os = uSettings::getHidTargetOs();
+        char mod[20];
+        if (os == 1) strcpy(mod, "KEY_LEFT_CTRL");   // macOS: Ctrl+Space
+        else         strcpy(mod, "KEY_LEFT_GUI");     // Windows/Linux: Win/Super+Space
+        char spc[] = " ";
+        HidKeyboard::press(mod);
+        HidKeyboard::press(spc);
+        HidKeyboard::releaseAll();
+    } else if ((unsigned char)txt[0] >= 0xC0 || strlen(txt) > 1) {
+        // Mode toggle (abc/ABC/1#/#1/SHIFT) — no special handling needed.
+        (void)0;
+    } else {
+        char* t = strdup(txt);
+        if (t) { HidKeyboard::print(t); free(t); }
+    }
+}

@@ -79,6 +79,17 @@
 
           <div class="setting-row">
             <div class="setting-label">
+              <span>Keyboard tab</span>
+              <span class="text-muted">Show LVGL virtual keyboard tab — forwards key presses via HID (only usable when HID is connected)</span>
+            </div>
+            <label class="toggle">
+              <input type="checkbox" v-model="form.keyboard_tab" />
+              <span class="toggle-track"></span>
+            </label>
+          </div>
+
+          <div class="setting-row">
+            <div class="setting-label">
               <span>Tab bar position</span>
               <span class="text-muted">Where the tab navigation bar is placed</span>
             </div>
@@ -734,6 +745,7 @@ const form = ref({
   macro_title_pos:    0,
   macro_shadow:       true,
   macro_brd_clr:   0,
+  keyboard_tab:       false,
 });
 
 // Color hex proxies for v-model on color inputs
@@ -800,6 +812,7 @@ function applySettings(s: Settings) {
   form.value.macro_title_pos   = s.macro_title_pos    ?? 0;
   form.value.macro_shadow      = s.macro_shadow       ?? true;
   form.value.macro_brd_clr  = s.macro_brd_clr   ?? 0;
+  form.value.keyboard_tab      = (s as any).keyboard_tab ?? false;
   message.value = '';
 }
 

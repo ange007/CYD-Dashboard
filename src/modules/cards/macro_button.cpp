@@ -2,6 +2,8 @@
 #include "style_common.h"
 #include "macros.h"
 
+#include "../hid/keyboard.h"
+
 #include "../../utils/settings.h"
 #include "../../utils/json.h"
 #include "../../utils/ui.h"
@@ -266,6 +268,26 @@ lv_obj_t* MacroButton::create(lv_obj_t* parent, cJSON* item, int btnSize)
     return btn;
 }
 
+// ── needsHid ─────────────────────────────────────────────────────────────────
+
+bool MacroButton::needsHid(cJSON* item) {
+    const char* type = uJSON::getString(item, "type");
+    if (!type) return false;
+    if (strcmp(type, MACROS_TYPE_KEYS) == 0) return true;
+    if (strcmp(type, MACROS_TYPE_MULTI) == 0) {
+        cJSON* actions = cJSON_GetObjectItem(item, "actions");
+        if (!cJSON_IsArray(actions)) return false;
+        cJSON* act = NULL;
+        cJSON_ArrayForEach(act, actions) {
+            const char* atype = uJSON::getString(act, "type");
+            if (atype && (strcmp(atype, "keys") == 0 || strcmp(atype, "text") == 0))
+                return true;
+        }
+        return false;
+    }
+    return false;
+}
+
 // ── createCell ───────────────────────────────────────────────────────────────
 // When titlePos == 1 and item has a non-empty title: creates a transparent
 // flex-column wrapper containing the button + a title label below it.
@@ -297,6 +319,9 @@ lv_obj_t* MacroButton::createCell(lv_obj_t* parent, cJSON* item, int btnSize, lv
 
     lv_obj_t* btn = create(btnParent, item, btnSize);
     if (outBtn) *outBtn = btn;
+
+    if (needsHid(item) && !HidKeyboard::isConnected())
+        lv_obj_add_state(btn, LV_STATE_DISABLED);
 
     if (!useTitleBelow) return btn;  // cell IS the button
 

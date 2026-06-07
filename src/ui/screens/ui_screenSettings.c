@@ -172,6 +172,57 @@ void ui_screenSettings_screen_init(void)
     lv_obj_set_height(ui_swBluetooth, 18);
     lv_obj_set_align(ui_swBluetooth, LV_ALIGN_RIGHT_MID);
 
+    // ── Row: Keyboard Tab switch ──────────────────────────────────────────────
+    lv_obj_t * ui_cntSettingsKbTab = lv_obj_create(ui_cntSettings);
+    lv_obj_remove_style_all(ui_cntSettingsKbTab);
+    lv_obj_set_height(ui_cntSettingsKbTab, 22);
+    lv_obj_set_width(ui_cntSettingsKbTab, lv_pct(100));
+    lv_obj_set_flex_flow(ui_cntSettingsKbTab, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ui_cntSettingsKbTab, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_START, LV_FLEX_ALIGN_START);
+    lv_obj_clear_flag(ui_cntSettingsKbTab, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_left(ui_cntSettingsKbTab, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui_cntSettingsKbTab, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui_cntSettingsKbTab, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui_cntSettingsKbTab, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * ui_lblKbTabSw = lv_label_create(ui_cntSettingsKbTab);
+    lv_obj_set_width(ui_lblKbTabSw, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui_lblKbTabSw, LV_SIZE_CONTENT);
+    lv_obj_set_align(ui_lblKbTabSw, LV_ALIGN_LEFT_MID);
+    lv_label_set_text(ui_lblKbTabSw, "Keyboard tab");
+    ui_object_set_themeable_style_property(ui_lblKbTabSw, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_TEXT_COLOR, _ui_theme_color_text);
+    ui_object_set_themeable_style_property(ui_lblKbTabSw, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_TEXT_OPA,   _ui_theme_alpha_text);
+
+    ui_swKeyboardTab = lv_switch_create(ui_cntSettingsKbTab);
+    lv_obj_set_width(ui_swKeyboardTab, 40);
+    lv_obj_set_height(ui_swKeyboardTab, 18);
+    lv_obj_set_align(ui_swKeyboardTab, LV_ALIGN_RIGHT_MID);
+
+    // ── Row: Keyboard Target OS ────────────────────────────────────────────────
+    lv_obj_t * ui_cntSettingsHidOs = lv_obj_create(ui_cntSettings);
+    lv_obj_remove_style_all(ui_cntSettingsHidOs);
+    lv_obj_set_height(ui_cntSettingsHidOs, 22);
+    lv_obj_set_width(ui_cntSettingsHidOs, lv_pct(100));
+    lv_obj_set_flex_flow(ui_cntSettingsHidOs, LV_FLEX_FLOW_ROW);
+    lv_obj_set_flex_align(ui_cntSettingsHidOs, LV_FLEX_ALIGN_SPACE_BETWEEN, LV_FLEX_ALIGN_CENTER, LV_FLEX_ALIGN_CENTER);
+    lv_obj_clear_flag(ui_cntSettingsHidOs, LV_OBJ_FLAG_CLICKABLE | LV_OBJ_FLAG_SCROLLABLE);
+    lv_obj_set_style_pad_left(ui_cntSettingsHidOs, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_right(ui_cntSettingsHidOs, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_top(ui_cntSettingsHidOs, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+    lv_obj_set_style_pad_bottom(ui_cntSettingsHidOs, 2, LV_PART_MAIN | LV_STATE_DEFAULT);
+
+    lv_obj_t * ui_lblHidOs = lv_label_create(ui_cntSettingsHidOs);
+    lv_obj_set_width(ui_lblHidOs, LV_SIZE_CONTENT);
+    lv_obj_set_height(ui_lblHidOs, LV_SIZE_CONTENT);
+    lv_label_set_text(ui_lblHidOs, "Keyboard Target OS");
+    ui_object_set_themeable_style_property(ui_lblHidOs, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_TEXT_COLOR, _ui_theme_color_text);
+    ui_object_set_themeable_style_property(ui_lblHidOs, LV_PART_MAIN | LV_STATE_DEFAULT, LV_STYLE_TEXT_OPA,   _ui_theme_alpha_text);
+
+    ui_dropdownHidOs = lv_dropdown_create(ui_cntSettingsHidOs);
+    lv_dropdown_set_options(ui_dropdownHidOs, "Windows\nmacOS\nLinux");
+    lv_obj_set_width(ui_dropdownHidOs, 100);
+    lv_obj_set_height(ui_dropdownHidOs, 20);
+
     // ── Bottom bar ─────────────────────────────────────────────────────────────
     ui_cntSettingsBottom = lv_obj_create(ui_screenSettings);
     lv_obj_remove_style_all(ui_cntSettingsBottom);
@@ -197,5 +248,7 @@ void ui_screenSettings_screen_init(void)
     lv_obj_add_event_cb(ui_swReverseColor,       ui_event_swReverseColor,       LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_sliderBrightness,     OnBrightnessChange,            LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_swBluetooth,          ui_event_swBluetooth,          LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_swKeyboardTab,        ui_event_swKeyboardTab,        LV_EVENT_ALL, NULL);
+    lv_obj_add_event_cb(ui_dropdownHidOs,        ui_event_dropdownHidOs,        LV_EVENT_ALL, NULL);
     lv_obj_add_event_cb(ui_btnSettingsClose,     ui_event_btnWifiManagerClose,  LV_EVENT_ALL, NULL);
 }

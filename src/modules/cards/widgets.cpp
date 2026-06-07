@@ -714,6 +714,9 @@ void Widgets::renderForScene(const char* sceneId)
             const char* targetId = uJSON::getString(item, "target_id");
             bool isFolder = (!targetId || targetId[0] == '\0');
             if (isFolder) {
+                // "Show at root" toggle — hide_root:true keeps this folder out of
+                // the root list (reachable only as a sub-scene or navigator target).
+                if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "hide_root"))) continue;
                 cJSON* profileIds = cJSON_GetObjectItemCaseSensitive(item, "profile_ids");
                 if (cJSON_IsArray(profileIds) && cJSON_GetArraySize(profileIds) > 0) {
                     bool match = false;

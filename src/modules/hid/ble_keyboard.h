@@ -49,6 +49,10 @@ public:
     static void pauseAdvertising();
     static void resumeAdvertising();
 
+    // Async send — non-blocking from LVGL/loopTask. Drained by dedicated sender task.
+    // type: 0=print, 1=press, 2=release_all
+    static void enqueue(uint8_t type, const char* data);
+
 private:
     static const MediaKeyReport* _lastMediaKey;
     static bool _initialized;

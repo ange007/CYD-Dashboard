@@ -25,6 +25,7 @@ export interface Macro {
   scene_id?: string;
   target_id?: string;
   profile_ids?: string[];
+  hide_root?: boolean;
   // Appearance overrides
   radius?: number;
   bg_opa?: number;
@@ -135,5 +136,19 @@ export const useMacrosStore = defineStore('macros', () => {
   /** Populate items externally (e.g. from /api/init) without an API call. */
   function setItems(data: Macro[]) { items.value = data; }
 
-  return { items, loading, error, load, setItems, upsert, remove, removeScene, moveInScene, assignScene, move };
+  /** Strip a deleted profile's id from every macro's profile_ids; save if changed. */
+  async function removeProfileRef(profileId: string) {
+    let changed = false;
+    items.value = items.value.map(m => {
+      if (!Array.isArray(m.profile_ids) || !m.profile_ids.includes(profileId)) return m;
+      changed = true;
+      const kept = m.profile_ids.filter(id => id !== profileId);
+      const copy = { ...m };
+      if (kept.length) copy.profile_ids = kept; else delete copy.profile_ids;
+      return copy;
+    });
+    if (changed) await save();
+  }
+
+  return { items, loading, error, load, setItems, upsert, remove, removeScene, moveInScene, assignScene, move, removeProfileRef };
 });

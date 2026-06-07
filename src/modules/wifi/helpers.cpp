@@ -108,17 +108,22 @@ namespace WiFiModule {
         NetDiag::wifiDisconnects++;
     }, ARDUINO_EVENT_WIFI_STA_DISCONNECTED);
 
-    uMemory::read("wifi", [](Preferences preferences) {
-      String ssid = preferences.getString("ssid");
-      String password = preferences.getString("pass");
-
-      if (ssid == "" || password == "") {
-        ESP_LOGI("WiFi", "No STA credentials saved — AP-only mode");
-      } else {
-        connect(ssid.c_str(), password.c_str());
-        UI::setSSIDList(ssid.c_str());
-      }
+    // Read credentials into locals INSIDE the NVS lock, then connect OUTSIDE it.
+    // connect() succeeds → uMemory::write("wifi") to persist; doing that while
+    // still inside this uMemory::read() callback re-enters the NVS mutex on the
+    // same task → permanent deadlock (boot hangs on the "wifi…" screen).
+    String savedSsid, savedPass;
+    uMemory::read("wifi", [&savedSsid, &savedPass](Preferences preferences) {
+      savedSsid = preferences.getString("ssid");
+      savedPass = preferences.getString("pass");
     });
+
+    if (savedSsid == "" || savedPass == "") {
+      ESP_LOGI("WiFi", "No STA credentials saved — AP-only mode");
+    } else {
+      connect(savedSsid.c_str(), savedPass.c_str());
+      UI::setSSIDList(savedSsid.c_str());
+    }
   }
 
   bool Helper::connect(const char* ssid, const char *passwd)

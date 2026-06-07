@@ -2,6 +2,7 @@
 #include "macro_button.h"
 
 #include "./constants.h"
+#include "../hid/keyboard.h"
 
 #include <string>
 #include <map>
@@ -75,6 +76,44 @@ void Macros::setToggleState(const char* id, bool val) {
 
 void Macros::applyToggleBtnColor(lv_obj_t* btn, cJSON* json, bool state) {
     MacroButton::applyToggleColor(btn, json, state);
+}
+
+void Macros::refreshHidButtonStates() {
+    if (!ui_cntMacros || !lv_obj_is_valid(ui_cntMacros)) return;
+    bool connected = HidKeyboard::isConnected();
+    _ui_enable_mutex(1);
+    uint32_t cnt = lv_obj_get_child_count(ui_cntMacros);
+    for (uint32_t i = 0; i < cnt; i++) {
+        lv_obj_t* child = lv_obj_get_child(ui_cntMacros, i);
+        lv_obj_t* btn   = child;
+        if (!lv_obj_check_type(child, &lv_button_class)) {
+            lv_obj_t* first = lv_obj_get_child(child, 0);
+            if (first && lv_obj_check_type(first, &lv_button_class)) btn = first;
+            else continue;
+        }
+        cJsonPtr json(uUI::getObjectDataJSON(btn), cJSON_Delete);
+        if (!json) continue;
+        if (MacroButton::needsHid(json.get())) {
+            if (connected) lv_obj_clear_state(btn, LV_STATE_DISABLED);
+            else           lv_obj_add_state  (btn, LV_STATE_DISABLED);
+        }
+    }
+    // Show/hide keyboard tab button: visible only when HID connected AND setting enabled.
+    // Single DISABLED state covers both gates — no hidden flag needed (hidden breaks tab nav).
+    if (ui_tabsMain && lv_obj_is_valid(ui_tabsMain)) {
+        lv_obj_t* kb_btn = lv_tabview_get_tab_button(ui_tabsMain, 2);
+        if (kb_btn) {
+            bool show = connected && uSettings::getKeyboardTabEnabled();
+            if (show) {
+                lv_obj_clear_state(kb_btn, LV_STATE_DISABLED);
+            } else {
+                if (lv_tabview_get_tab_act(ui_tabsMain) == 2)
+                    lv_tabview_set_active(ui_tabsMain, 0, LV_ANIM_OFF);
+                lv_obj_add_state(kb_btn, LV_STATE_DISABLED);
+            }
+        }
+    }
+    _ui_disable_mutex(1);
 }
 
 // ── Scene navigation state ────────────────────────────────────────────────────
@@ -266,6 +305,9 @@ void Macros::renderForScene(const char* sceneId)
                 const char* targetId = uJSON::getString(item, "target_id");
                 bool isFolder = (!targetId || targetId[0] == '\0');
                 if (isFolder) {
+                    // "Show at root" toggle — hide_root:true keeps this folder out of
+                    // the root list (reachable only as a sub-scene or navigator target).
+                    if (cJSON_IsTrue(cJSON_GetObjectItemCaseSensitive(item, "hide_root"))) continue;
                     cJSON* profileIds = cJSON_GetObjectItemCaseSensitive(item, "profile_ids");
                     if (cJSON_IsArray(profileIds) && cJSON_GetArraySize(profileIds) > 0) {
                         bool match = false;

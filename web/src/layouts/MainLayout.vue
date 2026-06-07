@@ -14,6 +14,9 @@
       <StatusBar />
       <button class="exit-svc-btn" @click="exitServiceMode" title="Exit Settings — returns to proxy page">&#x23FB; Exit</button>
     </header>
+    <div v-if="svcDenied" class="svc-denied-banner">
+      Read-only — another session holds edit access
+    </div>
     <main class="main">
       <RouterView />
     </main>
@@ -21,11 +24,11 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, provide, watch } from 'vue';
+import { onMounted, onUnmounted, provide, ref, watch } from 'vue';
 import { useRoute } from 'vue-router';
 import StatusBar from '../components/StatusBar.vue';
 import { loadBaseUrl, setOnRestored } from '../api/http';
-import { disconnectWs, send, onMessage } from '../api/ws';
+import { disconnectWs, send, onMessage, onServiceModeDenied } from '../api/ws';
 import {
   initSettings, initProfiles, initActiveProfile, initDisplay,
   initDone, initSdAvailable, runInit, resetInit,
@@ -33,7 +36,10 @@ import {
 
 // Track WS unsubscribe and pending exit-navigation timer for cleanup.
 let _unsubWs: (() => void) | null = null;
+let _unsubSvcDenied: (() => void) | null = null;
 let _exitNavTimer: ReturnType<typeof setTimeout> | null = null;
+let _reconnectNavTimer: ReturnType<typeof setTimeout> | null = null;
+const svcDenied = ref(false);
 
 provide('initSettings',       initSettings);
 provide('initProfiles',       initProfiles);
@@ -60,6 +66,13 @@ onMounted(() => {
   // If we landed directly on a data page (e.g. /macros), init immediately
   if (route.meta.requiresConnection && loadBaseUrl()) runInit();
 
+  // When denied (another session holds service mode), stay in SPA as read-only —
+  // cancels any pending reconnect-redirect and shows a banner instead.
+  _unsubSvcDenied = onServiceModeDenied(() => {
+    if (_reconnectNavTimer !== null) { clearTimeout(_reconnectNavTimer); _reconnectNavTimer = null; }
+    svcDenied.value = true;
+  });
+
   // Detect when the device exits service mode (timeout, crash, manual exit).
   // The device broadcasts service_mode_changed:{active:false} and closes the WS.
   // Without this handler the SPA stays alive in "zombie" state: the browser
@@ -68,26 +81,37 @@ onMounted(() => {
   _unsubWs = onMessage((msg) => {
     if (msg.action === 'service_mode_changed' && msg.active === false) {
       console.log('[SVC] Service mode exited — reloading to proxy page');
-      // Cancel the fallback timer from exitServiceMode() — server confirmed exit,
-      // so the 150 ms timer is redundant and could re-navigate the proxy page.
       if (_exitNavTimer !== null) { clearTimeout(_exitNavTimer); _exitNavTimer = null; }
+      if (_reconnectNavTimer !== null) { clearTimeout(_reconnectNavTimer); _reconnectNavTimer = null; }
       disconnectWs();
       window.location.href = '/';
     }
-    // WS dropped and reconnected — device likely rebooted and is no longer in
-    // service mode. Redirect to proxy page so user re-enters cleanly instead of
-    // remaining in the SPA zombie state (device in normal mode, browser in SPA).
+    // WS reconnected: wait up to 3 s for the device to confirm service_mode_entered.
+    // If confirmed → transient WS hiccup (WiFi drop, browser background throttle) —
+    // stay in SPA. If no reply → device rebooted and exited service mode → redirect.
+    // Avoids the reload-loop that the old immediate redirect caused on installed apps.
     if (msg.action === 'ws_reconnected') {
-      console.log('[SVC] WS reconnected after disconnect — returning to proxy page');
-      disconnectWs();
-      window.location.href = '/';
+      console.log('[SVC] WS reconnected — waiting for service_mode_entered…');
+      if (_reconnectNavTimer !== null) clearTimeout(_reconnectNavTimer);
+      _reconnectNavTimer = setTimeout(() => {
+        _reconnectNavTimer = null;
+        console.warn('[SVC] No service_mode_entered after reconnect — device rebooted, reloading');
+        disconnectWs();
+        window.location.href = '/';
+      }, 3000);
+    }
+    if (msg.action === 'service_mode_entered') {
+      if (_reconnectNavTimer !== null) { clearTimeout(_reconnectNavTimer); _reconnectNavTimer = null; }
+      svcDenied.value = false;
     }
   });
 });
 
 onUnmounted(() => {
   _unsubWs?.();
+  _unsubSvcDenied?.();
   if (_exitNavTimer !== null) { clearTimeout(_exitNavTimer); _exitNavTimer = null; }
+  if (_reconnectNavTimer !== null) { clearTimeout(_reconnectNavTimer); _reconnectNavTimer = null; }
   disconnectWs();
 });
 
@@ -145,6 +169,15 @@ watch(() => route.path, () => {
 }
 .tabs a:hover { color: #f1f5f9; background: rgba(255,255,255,.08); }
 .tabs a.router-link-active { color: #f1f5f9; font-weight: 600; background: rgba(255,255,255,.12); }
+
+.svc-denied-banner {
+  background: #7c3aed;
+  color: #fff;
+  text-align: center;
+  padding: 5px 16px;
+  font-size: 13px;
+  flex-shrink: 0;
+}
 
 .main { flex: 1; overflow: auto; }
 

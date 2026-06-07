@@ -1,13 +1,43 @@
 #include "ble_keyboard.h"
 #include "cyrillic.h"
+#include "../cards/macros.h"
 
 #ifdef USE_NIMBLE
 
 #include <Arduino.h>
 #include "./ui/ui.h"
 #include <NimBLEDevice.h>
+#include <freertos/queue.h>
+#include <freertos/task.h>
 
 static BleKeyboard* bleKeyboard = nullptr;
+
+// ── Async BLE HID sender ──────────────────────────────────────────────────────
+// bleKeyboard->write() blocks for setDelay ms per char. Calling it from the
+// loopTask (which also runs lv_timer_handler) freezes the UI. Instead, push
+// events here from loopTask (non-blocking xQueueSend), drain on a dedicated
+// task pinned to Core 0 (same core as NimBLE host).
+
+struct HidEvent { uint8_t type; char data[64]; };
+
+static QueueHandle_t _hidQueue      = nullptr;
+static TaskHandle_t  _hidSenderTask = nullptr;
+
+static void _hidSenderTaskFn(void*) {
+    HidEvent ev;
+    for (;;) {
+        if (xQueueReceive(_hidQueue, &ev, portMAX_DELAY) != pdTRUE) continue;
+        if (!BleHidKeyboard::isInitialized()) continue;
+        switch (ev.type) {
+        case 0: BleHidKeyboard::print(ev.data);    break;
+        case 1:
+            BleHidKeyboard::press(ev.data);
+            vTaskDelay(pdMS_TO_TICKS(12));          // ensure press/release in separate BLE events
+            break;
+        case 2: BleHidKeyboard::releaseAll();       break;
+        }
+    }
+}
 
 const MediaKeyReport* BleHidKeyboard::_lastMediaKey = nullptr;
 bool BleHidKeyboard::_initialized = false;
@@ -16,8 +46,14 @@ bool BleHidKeyboard::_advPaused   = false;
 void BleHidKeyboard::init()
 {
     if (_initialized) return;
+
+    if (!_hidQueue)
+        _hidQueue = xQueueCreate(16, sizeof(HidEvent));
+    if (!_hidSenderTask)
+        xTaskCreatePinnedToCore(_hidSenderTaskFn, "ble_hid", 2560, nullptr, 4, &_hidSenderTask, 0);
+
     bleKeyboard = new BleKeyboard(SERVER_NAME);
-    bleKeyboard->setDelay(50);
+    bleKeyboard->setDelay(10);  // now blocks sender task only, not loopTask
     bleKeyboard->begin();
 
     // sakul fork sets setScanResponse(false); under NimBLE 2.x that drops
@@ -44,6 +80,10 @@ void BleHidKeyboard::deinit()
 {
     if (!_initialized) return;
     _initialized = false;
+    // Flush pending queue entries so sender task sees _initialized=false and skips them.
+    if (_hidQueue) xQueueReset(_hidQueue);
+    // Wait for any in-flight sender call to return (max ~setDelay(10) per event).
+    vTaskDelay(pdMS_TO_TICKS(25));
     bleKeyboard = nullptr;
     NimBLEDevice::deinit(true);
 }
@@ -80,6 +120,8 @@ void BleHidKeyboard::loop()
 
     prevState = state;
     firstRun  = false;
+
+    Cards::Macros::refreshHidButtonStates();
 
     // On USB-capable boards, keyboard.cpp _switchToBle() sets symbol + initial color.
     // Here we only update the color (BLE connected=blue, disconnected=red).
@@ -317,6 +359,16 @@ void BleHidKeyboard::resumeAdvertising()
     _advPaused = false;
 }
 
+void BleHidKeyboard::enqueue(uint8_t type, const char* data)
+{
+    if (!_hidQueue) return;
+    HidEvent ev;
+    ev.type = type;
+    strncpy(ev.data, data ? data : "", sizeof(ev.data) - 1);
+    ev.data[sizeof(ev.data) - 1] = '\0';
+    xQueueSend(_hidQueue, &ev, pdMS_TO_TICKS(5));  // drop on full rather than block loopTask
+}
+
 #else /* !USE_NIMBLE — no-BLE build. Empty stubs keep call sites compiling. */
 
 const MediaKeyReport* BleHidKeyboard::_lastMediaKey = nullptr;
@@ -337,5 +389,6 @@ void BleHidKeyboard::press(char*) {}
 void BleHidKeyboard::releaseAll() {}
 void BleHidKeyboard::pauseAdvertising() {}
 void BleHidKeyboard::resumeAdvertising() {}
+void BleHidKeyboard::enqueue(uint8_t, const char*) {}
 
 #endif

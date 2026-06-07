@@ -37,6 +37,7 @@ export interface Widget {
   done_url?: string;
   // --- profile visibility ---
   profile_ids?: string[];  // empty/absent = visible in all profiles
+  hide_root?: boolean;     // true = keep scene folder out of the root grid
   // --- image widget ---
   image_src?: string;
   // --- icon positioning ---
@@ -137,5 +138,19 @@ export const useWidgetsStore = defineStore('widgets', () => {
   /** Populate items externally (e.g. from /api/init) without an API call. */
   function setItems(data: Widget[]) { items.value = data; }
 
-  return { items, loading, error, load, setItems, upsert, remove, removeScene, moveInScene, assignScene, move };
+  /** Strip a deleted profile's id from every widget's profile_ids; save if changed. */
+  async function removeProfileRef(profileId: string) {
+    let changed = false;
+    items.value = items.value.map(w => {
+      if (!Array.isArray(w.profile_ids) || !w.profile_ids.includes(profileId)) return w;
+      changed = true;
+      const kept = w.profile_ids.filter(id => id !== profileId);
+      const copy = { ...w };
+      if (kept.length) copy.profile_ids = kept; else delete copy.profile_ids;
+      return copy;
+    });
+    if (changed) await save();
+  }
+
+  return { items, loading, error, load, setItems, upsert, remove, removeScene, moveInScene, assignScene, move, removeProfileRef };
 });

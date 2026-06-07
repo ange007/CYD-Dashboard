@@ -61,6 +61,26 @@ void SelfHeal::check()
     // -- Trigger 1: WiFi not connected ---------------------------------------
     if (WiFi.status() != WL_CONNECTED)
     {
+        // No station credentials configured (fresh flash / NVS erased by a
+        // web/USB install) → there is nothing to reconnect to. Rebooting can't
+        // conjure a password, so DON'T escalate to esp_restart — that just
+        // reboot-loops every 5 min. Stay in AP config mode (already up via
+        // APSTA) so the user can enter Wi-Fi. Reset the streak so it starts
+        // fresh once credentials are saved.
+        wifi_config_t staCfg = {};
+        bool hasCreds = (esp_wifi_get_config(WIFI_IF_STA, &staCfg) == ESP_OK &&
+                         staCfg.sta.ssid[0] != 0);
+        if (!hasCreds)
+        {
+            _reconnectFailStreak = 0;
+            static uint32_t _lastNoCredLog = 0;
+            if (now - _lastNoCredLog > 60000) {
+                ESP_LOGW("NETDIAG", "SelfHeal: no Wi-Fi credentials — staying in AP config mode (no reboot)");
+                _lastNoCredLog = now;
+            }
+            return;
+        }
+
         _reconnectFailStreak++;
         ESP_LOGW("NETDIAG", "SelfHeal: WiFi status=%d not connected (streak=%u)",
                  (int)WiFi.status(), (unsigned)_reconnectFailStreak);

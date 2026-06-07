@@ -71,6 +71,18 @@
         </select>
       </div>
 
+      <!-- ── Show at root (folder only) ── -->
+      <div v-if="!form.target_id" class="field">
+        <label class="profile-check-item" style="font-size:14px">
+          <input type="checkbox" v-model="form.hide_root" />
+          Hide from root
+        </label>
+        <div class="hint-box" style="margin-top:6px">
+          When enabled, this scene is <strong>not shown</strong> in the top-level grid. It stays
+          reachable as a sub-scene or via a navigator button that targets it. Independent of profiles.
+        </div>
+      </div>
+
       <!-- ── Profile visibility (folder only) ── -->
       <div v-if="!form.target_id" class="field">
         <label>Visible in profiles
@@ -84,6 +96,16 @@
             <input type="checkbox" :value="p.id" v-model="form.profile_ids" />
             {{ p.name }}
           </label>
+        </div>
+        <div v-if="orphanProfileIds.length" class="orphan-box">
+          <div class="orphan-title">⚠ Restricted to deleted profile(s)</div>
+          <div class="text-muted" style="font-size:12px;margin-bottom:6px">
+            This scene is hidden because it references profiles that no longer exist. Remove to show it again.
+          </div>
+          <button v-for="id in orphanProfileIds" :key="id" type="button"
+                  class="orphan-chip" @click="removeOrphan(id)" :title="id">
+            {{ id.slice(0, 8) }}… ✕
+          </button>
         </div>
         <div class="hint-box" style="margin-top:6px">
           When profiles are selected, this scene button is <strong>only visible</strong> on the device
@@ -257,12 +279,22 @@ async function loadSdIcons() {
 // ── Profiles ──────────────────────────────────────────────────────────────
 const availableProfiles = ref<{ id: string; name: string }[]>([]);
 
+// profile_ids that point to a profile that no longer exists (orphaned) — these
+// silently hide the scene with no checkbox to clear them, so surface them here.
+const orphanProfileIds = computed(() =>
+  form.profile_ids.filter(id => !availableProfiles.value.some(p => p.id === id))
+);
+function removeOrphan(id: string) {
+  form.profile_ids = form.profile_ids.filter(x => x !== id);
+}
+
 // ── Form ──────────────────────────────────────────────────────────────────
 const form = reactive({
   title:       '',
   icon:        '',
   target_id:   '',
   profile_ids: [] as string[],
+  hide_root:   false,
 });
 
 // ── Scene definitions for navigate-to dropdown ────────────────────────────
@@ -365,6 +397,7 @@ onMounted(async () => {
       form.target_id   = (item as any).target_id   ?? '';
       form.profile_ids = Array.isArray((item as any).profile_ids)
                            ? [...(item as any).profile_ids] : [];
+      form.hide_root   = !!(item as any).hide_root;
     }
   }
 
@@ -389,6 +422,7 @@ async function onSave() {
     if (form.icon.trim())                          item.icon        = form.icon.trim();
     if (form.target_id)                            item.target_id   = form.target_id;
     if (!form.target_id && form.profile_ids.length) item.profile_ids = [...form.profile_ids];
+    if (!form.target_id && form.hide_root)          item.hide_root   = true;
 
     await store.upsert(item);
     if (bgDirty.value) {
@@ -510,4 +544,27 @@ async function onSave() {
   font-size: 13px;
 }
 .scene-banner-icon { font-size: 20px; line-height: 1.2; flex-shrink: 0; }
+
+/* ── orphaned profile refs ── */
+.orphan-box {
+  margin-top: 8px;
+  background: color-mix(in srgb, #f59e0b 8%, var(--surface2));
+  border: 1px solid color-mix(in srgb, #f59e0b 40%, var(--border));
+  border-radius: 4px;
+  padding: 8px 10px;
+}
+.orphan-title { font-size: 13px; font-weight: 600; margin-bottom: 4px; }
+.orphan-chip {
+  display: inline-block;
+  margin: 2px 4px 2px 0;
+  padding: 2px 8px;
+  font-size: 12px;
+  font-family: monospace;
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  color: var(--text);
+  cursor: pointer;
+}
+.orphan-chip:hover { border-color: #ef4444; color: #ef4444; }
 </style>

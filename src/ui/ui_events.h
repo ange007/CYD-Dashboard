@@ -21,6 +21,9 @@ void OnReverseColorSwitchChange(lv_event_t * e);
 void OnBrightnessChange(lv_event_t * e);
 void OnSettingsClose(lv_event_t * e);
 void OnProfileBtnClicked(lv_event_t * e);
+void OnVirtualKeyboardEvent(lv_event_t * e);
+void ui_event_swKeyboardTab(lv_event_t * e);
+void ui_event_dropdownHidOs(lv_event_t * e);
 
 #ifdef __cplusplus
 }

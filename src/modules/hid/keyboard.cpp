@@ -1,6 +1,7 @@
 #include "keyboard.h"
 #include <esp_log.h>
 #include "./ui/ui.h"
+#include "../cards/macros.h"
 
 HidKeyboard::Backend HidKeyboard::_active = HidKeyboard::NONE;
 
@@ -9,6 +10,9 @@ static CompanionHidKeyboard _companion;
 // Written by setCompanionHidReady() from network task; read in loop() on main task.
 static volatile bool     _companionReady    = false;
 static volatile uint32_t _companionClientId = 0;
+
+// Whether BLE is allowed (mirrors the device setting; default on).
+static bool _bleEnabled = true;
 
 void HidKeyboard::setCompanionHidReady(bool ready, uint32_t clientId)
 {
@@ -47,6 +51,7 @@ static void _updateHidIcon(HidKeyboard::Backend b)
                                     LV_PART_MAIN | LV_STATE_DEFAULT);
     }
     _ui_disable_mutex(1);
+    Cards::Macros::refreshHidButtonStates();
 }
 
 // ── Companion switch helper (common to all board types) ───────────────────────
@@ -167,7 +172,7 @@ void HidKeyboard::loop()
                  (unsigned)(GRACE_TIMEOUT_MS / 1000));
     }
 
-    if (_pendingBle && _active == NONE) {
+    if (_pendingBle && _active == NONE && _bleEnabled) {
         _pendingBle = false;
         _switchToBle();
     }
@@ -187,21 +192,21 @@ void HidKeyboard::print(char* text)
 {
     if (_active == COMPANION) _companion.print(text);
     else if (_active == USB)  UsbHidKeyboard::print(text);
-    else if (_active == BLE)  BleHidKeyboard::print(text);
+    else if (_active == BLE)  BleHidKeyboard::enqueue(0, text);
 }
 
 void HidKeyboard::press(char* key)
 {
     if (_active == COMPANION) _companion.press(key);
     else if (_active == USB)  UsbHidKeyboard::press(key);
-    else if (_active == BLE)  BleHidKeyboard::press(key);
+    else if (_active == BLE)  BleHidKeyboard::enqueue(1, key);
 }
 
 void HidKeyboard::releaseAll()
 {
     if (_active == COMPANION) _companion.releaseAll();
     else if (_active == USB)  UsbHidKeyboard::releaseAll();
-    else if (_active == BLE)  BleHidKeyboard::releaseAll();
+    else if (_active == BLE)  BleHidKeyboard::enqueue(2, "");
 }
 
 void HidKeyboard::pauseAdvertising()  { BleHidKeyboard::pauseAdvertising(); }
@@ -214,12 +219,15 @@ void HidKeyboard::_onGraceTimerExpired() {}
 
 void HidKeyboard::applyBluetoothEnabled(bool on)
 {
+    _bleEnabled = on;
     if (!on) {
         if (BleHidKeyboard::isInitialized()) BleHidKeyboard::deinit();
         if (_active == BLE) {
             _active = NONE;
             _updateHidIcon(NONE);
         }
+    } else if (_active == NONE && !UsbHidKeyboard::isMounted()) {
+        _pendingBle = true;  // loop() will call _switchToBle() next tick
     }
 }
 
@@ -263,11 +271,12 @@ void HidKeyboard::loop()
     }
     if (!_companionReady && _active == COMPANION) {
         _companion.deinit();
-        _switchToBle();
+        if (_bleEnabled) _switchToBle();
+        else { _active = NONE; _updateHidIcon(NONE); }
         return;
     }
     if (_active == COMPANION) return;
-    BleHidKeyboard::loop();
+    if (_bleEnabled) BleHidKeyboard::loop();
 }
 
 bool HidKeyboard::isConnected()
@@ -279,19 +288,19 @@ bool HidKeyboard::isConnected()
 void HidKeyboard::print(char* text)
 {
     if (_active == COMPANION) _companion.print(text);
-    else BleHidKeyboard::print(text);
+    else BleHidKeyboard::enqueue(0, text);
 }
 
 void HidKeyboard::press(char* key)
 {
     if (_active == COMPANION) _companion.press(key);
-    else BleHidKeyboard::press(key);
+    else BleHidKeyboard::enqueue(1, key);
 }
 
 void HidKeyboard::releaseAll()
 {
     if (_active == COMPANION) _companion.releaseAll();
-    else BleHidKeyboard::releaseAll();
+    else BleHidKeyboard::enqueue(2, "");
 }
 
 void HidKeyboard::pauseAdvertising()  { BleHidKeyboard::pauseAdvertising(); }
@@ -301,12 +310,15 @@ HidKeyboard::Backend HidKeyboard::activeBackend() { return _active; }
 
 void HidKeyboard::applyBluetoothEnabled(bool on)
 {
-    if (!on && BleHidKeyboard::isInitialized()) {
-        BleHidKeyboard::deinit();
+    _bleEnabled = on;
+    if (!on) {
+        if (BleHidKeyboard::isInitialized()) BleHidKeyboard::deinit();
         if (_active == BLE) {
             _active = NONE;
             _updateHidIcon(NONE);
         }
+    } else if (_active == NONE) {
+        _switchToBle();
     }
 }
 

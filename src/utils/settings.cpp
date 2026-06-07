@@ -14,6 +14,7 @@
 
 #include "../ui/ui.h"
 #include "../ui/ui_themes.h"
+#include "../modules/cards/macros.h"
 
 #include <esp32_smartdisplay.h>
 
@@ -54,6 +55,8 @@ static int  _macro_title_pos   = SETTINGS_DEFAULT_MACRO_TITLE_POS;
 static bool _macro_shadow      = (SETTINGS_DEFAULT_MACRO_SHADOW != 0);
 static int  _macro_brd_clr  = SETTINGS_DEFAULT_MACRO_BORDER_CLR;
 static bool _bt_enabled        = true;
+static bool _keyboard_tab      = false;
+static int  _hid_target_os     = 0;    // 0=Windows, 1=macOS, 2=Linux
 static int  _status_bar_pos      = SETTINGS_DEFAULT_STATUS_BAR_POS;
 static bool _status_bar_autohide = (SETTINGS_DEFAULT_STATUS_BAR_AUTOHIDE != 0);
 static int  _status_bar_idle_s   = SETTINGS_DEFAULT_STATUS_BAR_IDLE_S;
@@ -366,8 +369,10 @@ void uSettings::applyTabPosition(int pos)
 
     // Update tab labels based on position
     bool isVertical = (pos == 1 || pos == 2);
-    lv_tabview_set_tab_text(ui_tabsMain, 0, isVertical ? LV_SYMBOL_KEYBOARD : "Macros");
+    lv_tabview_set_tab_text(ui_tabsMain, 0, isVertical ? LV_SYMBOL_BARS : "Macros");
     lv_tabview_set_tab_text(ui_tabsMain, 1, isVertical ? LV_SYMBOL_LIST : "Widgets");
+    if (lv_tabview_get_tab_count(ui_tabsMain) > 2)
+        lv_tabview_set_tab_text(ui_tabsMain, 2, LV_SYMBOL_KEYBOARD);
 
     lv_dir_t dir = LV_DIR_TOP;
     int      sz  = 35;
@@ -428,6 +433,25 @@ void uSettings::applyTabPosition(int pos)
         ui_object_set_themeable_style_property(btn, LV_PART_MAIN | LV_STATE_CHECKED, LV_STYLE_BORDER_COLOR, _ui_theme_color_tabBorder);
         ui_object_set_themeable_style_property(btn, LV_PART_MAIN | LV_STATE_CHECKED, LV_STYLE_BORDER_OPA,   _ui_theme_alpha_tabBorder);
     }
+
+    // KB tab button: compact (icon-only width), not flex-grow like the other tabs.
+    // Use a fixed pixel size — LV_SIZE_CONTENT on a hidden object evaluates to 0
+    // (label layout is not computed while HIDDEN), so the button would have zero
+    // width when later shown and be untappable.
+    if (lv_tabview_get_tab_count(ui_tabsMain) > 2) {
+        lv_obj_t* kb_btn = lv_tabview_get_tab_button(ui_tabsMain, 2);
+        if (kb_btn) {
+            lv_obj_set_flex_grow(kb_btn, 0);
+            if (!isVertical) {
+                lv_obj_set_width(kb_btn, 42);
+            } else {
+                lv_obj_set_height(kb_btn, 42);
+            }
+        }
+    }
+
+    // Restore KB tab button visibility after relayout (DISABLED state may reset).
+    Cards::Macros::refreshHidButtonStates();
 }
 
 void uSettings::setTabPos(int pos)
@@ -821,7 +845,9 @@ void uSettings::load()
         _macro_title_pos = preferences.getInt("macro_title",   SETTINGS_DEFAULT_MACRO_TITLE_POS);
         _macro_shadow    = preferences.getBool("macro_shadow", SETTINGS_DEFAULT_MACRO_SHADOW != 0);
         _bt_enabled      = preferences.getBool("bt_en", true);
-        _macro_brd_clr = preferences.getInt("macro_brd_clr", SETTINGS_DEFAULT_MACRO_BORDER_CLR);
+        _macro_brd_clr   = preferences.getInt("macro_brd_clr", SETTINGS_DEFAULT_MACRO_BORDER_CLR);
+        _keyboard_tab    = preferences.getBool("keyboard_tab", false);
+        _hid_target_os   = preferences.getInt("hid_target_os", 0);
 
         // Scene background cache — load at boot so renderForScene() never reads NVS
         String sbStr = preferences.isKey("scene_bgs") ? preferences.getString("scene_bgs") : "{}";
@@ -855,6 +881,14 @@ void uSettings::load()
     if (ui_swBluetooth) lv_obj_add_flag(lv_obj_get_parent(lv_obj_get_parent(ui_swBluetooth)),
                                          LV_OBJ_FLAG_HIDDEN);
 #endif
+
+    applySwitchStyle(ui_swKeyboardTab);
+    if (_keyboard_tab) lv_obj_add_state(ui_swKeyboardTab, LV_STATE_CHECKED);
+    else               lv_obj_clear_state(ui_swKeyboardTab, LV_STATE_CHECKED);
+    applyKeyboardTabEnabled(_keyboard_tab);
+
+    applyDropdownStyle(ui_dropdownHidOs);
+    lv_dropdown_set_selected(ui_dropdownHidOs, (uint16_t)_hid_target_os);
 }
 
 // ── Widget masonry style + column count ──────────────────────────────────────
@@ -903,6 +937,15 @@ void uSettings::setMacroShadow(bool enabled)  { _macro_shadow = enabled; saveBoo
 
 bool uSettings::getBluetoothEnabled()         { return _bt_enabled; }
 void uSettings::setBluetoothEnabled(bool on)  { _bt_enabled = on; saveBool(NVS_KEY("bt_en"), on); }
+
+bool uSettings::getKeyboardTabEnabled()        { return _keyboard_tab; }
+void uSettings::setKeyboardTabEnabled(bool on) { _keyboard_tab = on; saveBool(NVS_KEY("keyboard_tab"), on); }
+int  uSettings::getHidTargetOs()               { return _hid_target_os; }
+void uSettings::setHidTargetOs(int v)          { _hid_target_os = v; saveInt(NVS_KEY("hid_target_os"), v); }
+void uSettings::applyKeyboardTabEnabled(bool on) {
+    _keyboard_tab = on;
+    Cards::Macros::refreshHidButtonStates();
+}
 
 int  uSettings::getMacroBorderColor()         { return _macro_brd_clr; }
 void uSettings::setMacroBorderColor(int rgb)  { _macro_brd_clr = rgb; saveInt(NVS_KEY("macro_brd_clr"), rgb); }
@@ -1053,6 +1096,12 @@ uSettings::SettingsApplyResult uSettings::applyFromJson(cJSON* obj) {
     if (cJSON_IsBool(item)) { bool v = cJSON_IsTrue(item); setMacroShadow(v); r.macro_rerender = true; cJSON_AddBoolToObject(updateOwner.get(),"macro_shadow", v); }
     item = cJSON_GetObjectItem(obj, "bt_en");
     if (cJSON_IsBool(item)) { bool v = cJSON_IsTrue(item); setBluetoothEnabled(v); r.bt_en = true; r.bt_en_v = v; cJSON_AddBoolToObject(updateOwner.get(), "bt_en", v); }
+
+    item = cJSON_GetObjectItem(obj, "keyboard_tab");
+    if (cJSON_IsBool(item)) { bool v = cJSON_IsTrue(item); setKeyboardTabEnabled(v); r.keyboard_tab = true; r.keyboard_tab_v = v; cJSON_AddBoolToObject(updateOwner.get(), "keyboard_tab", v); }
+
+    item = cJSON_GetObjectItem(obj, "hid_target_os");
+    if (cJSON_IsNumber(item)) { int v = (int)item->valuedouble; if (v >= 0 && v <= 2) { setHidTargetOs(v); cJSON_AddNumberToObject(updateOwner.get(), "hid_target_os", v); } }
 
     item = cJSON_GetObjectItem(obj, "macro_brd_clr");
     if (cJSON_IsNumber(item)) { int v = (int)item->valuedouble; setMacroBorderColor(v); r.macro_rerender = true; cJSON_AddNumberToObject(updateOwner.get(),"macro_brd_clr", v); }

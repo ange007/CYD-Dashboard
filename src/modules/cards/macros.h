@@ -20,6 +20,10 @@ namespace Cards {
         static bool sendDataToUrl(const char* macrosId, const char* url);
         static bool sendDataToUrlBySystem(const char* macrosId, const char* url);
 
+        // Iterate ui_cntMacros children and set/clear LV_STATE_DISABLED per macro type.
+        // Also updates the KB tab button enable state. Called on HID connect/disconnect.
+        static void refreshHidButtonStates();
+
         // ── Toggle state ───────────────────────────────────────────────────────
         // DEPRECATED: unsafe across tasks — HTTP callers must use getCachedJsonCopy().
         static const char* getCachedJson();

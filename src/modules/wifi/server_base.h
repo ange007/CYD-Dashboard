@@ -11,6 +11,9 @@
 #include <string>
 #include <vector>
 #include <freertos/portmacro.h>
+#ifdef ENABLE_SCREENSHOT_ENDPOINT
+#include <freertos/semphr.h>
+#endif
 
 #include "../../utils/settings.h"
 
@@ -131,6 +134,8 @@ protected:
     volatile int  _pending_brightness_ui_v = 0;
     volatile bool _pending_bt_en_ui        = false;
     volatile bool _pending_bt_en_ui_v      = false;
+    volatile bool _pending_keyboard_tab    = false;
+    volatile bool _pending_keyboard_tab_v  = false;
     volatile bool _pending_mdns_restart    = false;
     volatile bool _pending_widgets_refresh = false;
     // Fast-path counterpart to _pending_widgets_refresh: only re-arm widget
@@ -168,6 +173,18 @@ protected:
     // unconditional lv_obj_clean(ui_cntWidgets) + recreate and only re-arm
     // timers, eliminating the ~3 KB largest_free_block loss per cycle on no-PSRAM.
     volatile bool     _widgets_dirty_in_svc  = false;
+
+#ifdef ENABLE_SCREENSHOT_ENDPOINT
+    // Deferred screenshot: HTTP handler fills this, gives trigger, waits on done.
+    // loop() (LVGL task) processes it and signals done. Both semaphores are binary.
+    struct ScreenshotCtx {
+        uint8_t*          pixBuf  = nullptr;
+        uint32_t          w = 0, h = 0, stride = 0;
+        volatile bool     ok      = false;
+        SemaphoreHandle_t trigger = nullptr;  // HTTP → loop
+        SemaphoreHandle_t done    = nullptr;  // loop → HTTP
+    } _screenshotCtx;
+#endif
 
     // ── WS fragment reassembly (shared data structure) ─────────────────────────
     static constexpr size_t   WS_MSG_MAX     = 8 * 1024;

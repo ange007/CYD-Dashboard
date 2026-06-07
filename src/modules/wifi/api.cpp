@@ -167,11 +167,8 @@ namespace WiFiModule {
             }
             state = true;
         } else if (strcmp(action, "exit_service_mode") == 0) {
-            if (WSServer::isServiceMode()) {
-                uint32_t owner = WSServer::getServiceModeClientId();
-                if (owner == 0 || owner == clientId)
-                    WSServer::exitServiceMode();
-            }
+            if (WSServer::isServiceMode())
+                WSServer::exitServiceMode();
             state = true;
         } else if (strcmp(action, "force_enter_service_mode") == 0) {
             // User explicitly takes over a session held by another client
