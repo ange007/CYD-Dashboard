@@ -36,6 +36,8 @@ static void _hidSenderTaskFn(void*) {
             break;
         case 2: BleHidKeyboard::releaseAll();       break;
         }
+        ESP_LOGD("BLE", "ble_hid stack high-water: %u bytes free",
+                 (unsigned)(uxTaskGetStackHighWaterMark(nullptr) * sizeof(StackType_t)));
     }
 }
 
@@ -50,11 +52,20 @@ void BleHidKeyboard::init()
     if (!_hidQueue)
         _hidQueue = xQueueCreate(16, sizeof(HidEvent));
     if (!_hidSenderTask)
-        xTaskCreatePinnedToCore(_hidSenderTaskFn, "ble_hid", 2560, nullptr, 4, &_hidSenderTask, 0);
+        // 2560 B overflowed during BLE notify (canary panic → reboot loop on
+        // connect+type). NimBLE GATT notify + Arduino String need ~4 KB.
+        xTaskCreatePinnedToCore(_hidSenderTaskFn, "ble_hid", 4096, nullptr, 4, &_hidSenderTask, 0);
 
     bleKeyboard = new BleKeyboard(SERVER_NAME);
     bleKeyboard->setDelay(10);  // now blocks sender task only, not loopTask
     bleKeyboard->begin();
+    // BleKeyboard constructor doesn't zero _keyReport/_mediaKeyReport. If this
+    // BleKeyboard instance lands on heap previously used by a freed instance,
+    // those fields inherit stale values → host sees phantom keys pressed on the
+    // next connection. Zero them now (sendReport skips notify if not connected,
+    // but the struct fields are cleared — loop() sends a confirmed null report
+    // on the first connect transition).
+    bleKeyboard->releaseAll();
 
     // sakul fork sets setScanResponse(false); under NimBLE 2.x that drops
     // the device name from the advertisement, so hosts see only a MAC
@@ -117,6 +128,13 @@ void BleHidKeyboard::loop()
     if (!state) connParamsUpdated = false;
 
     if (state == prevState && !firstRun) return;
+
+    if (state && !prevState) {
+        // Just connected: push a null report through the sender queue so the
+        // host receives a confirmed all-keys-released state. Guards against any
+        // residual stale key state from a previous session (see init() comment).
+        enqueue(2, "");
+    }
 
     prevState = state;
     firstRun  = false;
