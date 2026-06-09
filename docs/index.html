@@ -1,0 +1,416 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>CYD Dashboard</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+:root { color-scheme: dark; }
+*, *::before, *::after { box-sizing: border-box; }
+body {
+  margin: 0;
+  background: #1a1f2e; color: #e8edf4;
+  font: 16px/1.6 system-ui, -apple-system, sans-serif;
+}
+a { color: #6fa8ff; }
+a:hover { color: #9ec5ff; }
+code {
+  background: #2c3650; padding: 1px 6px; border-radius: 4px;
+  font-size: 0.88em; font-family: 'JetBrains Mono', 'Fira Code', monospace;
+}
+pre {
+  background: #1e2535; border: 1px solid #2e3a50; border-radius: 8px;
+  padding: 16px 20px; overflow-x: auto; font-size: 0.88em;
+  font-family: 'JetBrains Mono', 'Fira Code', monospace; line-height: 1.5;
+}
+pre code { background: none; padding: 0; font-size: inherit; }
+
+/* ── Layout ──────────────────────────────────────────────────── */
+.container { max-width: 960px; margin: 0 auto; padding: 0 24px; }
+
+/* ── Nav ─────────────────────────────────────────────────────── */
+nav {
+  background: #141820; border-bottom: 1px solid #2a3346;
+  position: sticky; top: 0; z-index: 10;
+}
+nav .inner {
+  max-width: 960px; margin: 0 auto; padding: 0 24px;
+  display: flex; align-items: center; gap: 24px; height: 52px;
+}
+.nav-brand { font-weight: 700; font-size: 1rem; color: #e8edf4; text-decoration: none; }
+.nav-links { display: flex; gap: 20px; margin-left: auto; }
+.nav-links a { color: #9aa7bd; text-decoration: none; font-size: 0.9rem; }
+.nav-links a:hover { color: #e8edf4; }
+
+/* ── Hero ────────────────────────────────────────────────────── */
+.hero { padding: 72px 0 56px; text-align: center; }
+.hero h1 { font-size: 2.4rem; font-weight: 800; margin: 0 0 12px; letter-spacing: -0.5px; }
+.hero h1 span { color: #3d7ed4; }
+.hero .tagline {
+  font-size: 1.1rem; color: #9aa7bd; max-width: 640px;
+  margin: 0 auto 36px;
+}
+.hero-actions { display: flex; gap: 12px; justify-content: center; flex-wrap: wrap; }
+.btn {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px; border-radius: 8px; font-weight: 600;
+  font-size: 0.95rem; text-decoration: none; cursor: pointer;
+  border: none; transition: opacity .15s, transform .1s;
+}
+.btn:hover { opacity: .88; transform: translateY(-1px); }
+.btn-primary { background: #3d7ed4; color: #fff; }
+.btn-secondary {
+  background: transparent; color: #e8edf4;
+  border: 1px solid #3a4a62;
+}
+esp-web-install-button { display: inline-flex; }
+esp-web-install-button button {
+  display: inline-flex; align-items: center; gap: 8px;
+  padding: 12px 24px; border-radius: 8px; font-weight: 600;
+  font-size: 0.95rem; background: #22c55e; color: #fff;
+  border: none; cursor: pointer; transition: opacity .15s;
+}
+esp-web-install-button button:hover { opacity: .88; }
+
+/* ── Screenshots ─────────────────────────────────────────────── */
+.section { padding: 56px 0; }
+.section-title {
+  font-size: 1.5rem; font-weight: 700; margin: 0 0 8px; text-align: center;
+}
+.section-sub { color: #9aa7bd; text-align: center; margin: 0 0 36px; }
+
+.screenshots-device {
+  display: flex; gap: 10px; overflow-x: auto; padding-bottom: 8px;
+  justify-content: center; flex-wrap: wrap;
+}
+.screenshots-device figure {
+  margin: 0; text-align: center; flex: 0 0 auto;
+}
+.screenshots-device img {
+  display: block; border-radius: 8px; border: 1px solid #2e3a50;
+  max-height: 220px; width: auto;
+}
+.screenshots-device figcaption {
+  color: #9aa7bd; font-size: 0.8rem; margin-top: 6px;
+}
+
+.screenshots-web {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr));
+  gap: 16px;
+}
+.screenshots-web figure { margin: 0; }
+.screenshots-web img {
+  display: block; width: 100%; border-radius: 8px;
+  border: 1px solid #2e3a50;
+}
+.screenshots-web figcaption {
+  color: #9aa7bd; font-size: 0.8rem; margin-top: 6px; text-align: center;
+}
+
+/* ── Features ────────────────────────────────────────────────── */
+.features-grid {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+  gap: 16px;
+}
+.feature-card {
+  background: #1e2535; border: 1px solid #2e3a50; border-radius: 10px;
+  padding: 20px;
+}
+.feature-card .icon { font-size: 1.6rem; margin-bottom: 10px; }
+.feature-card h3 { margin: 0 0 6px; font-size: 1rem; }
+.feature-card p { margin: 0; color: #9aa7bd; font-size: 0.88rem; line-height: 1.55; }
+
+/* ── Quick start ─────────────────────────────────────────────── */
+.quickstart { background: #1e2535; border-radius: 12px; padding: 32px; }
+.quickstart h3 { margin: 0 0 16px; font-size: 1.1rem; }
+.quickstart p { color: #9aa7bd; margin: 0 0 12px; font-size: 0.9rem; }
+
+/* ── Boards table ────────────────────────────────────────────── */
+.boards-table { width: 100%; border-collapse: collapse; font-size: 0.9rem; margin-top: 24px; }
+.boards-table th, .boards-table td {
+  text-align: left; padding: 10px 14px;
+  border-bottom: 1px solid #2e3a50;
+}
+.boards-table th { color: #9aa7bd; font-weight: 600; }
+.boards-table tr:last-child td { border-bottom: none; }
+
+/* ── Companion ───────────────────────────────────────────────── */
+.companion-features {
+  display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: 10px; margin-top: 20px;
+}
+.companion-item {
+  background: #1e2535; border: 1px solid #2e3a50; border-radius: 8px;
+  padding: 14px 16px; font-size: 0.88rem;
+}
+.companion-item strong { display: block; margin-bottom: 2px; color: #e8edf4; }
+.companion-item span { color: #9aa7bd; }
+
+/* ── Divider ─────────────────────────────────────────────────── */
+.divider { border: none; border-top: 1px solid #2e3a50; margin: 0; }
+
+/* ── Footer ──────────────────────────────────────────────────── */
+footer {
+  text-align: center; padding: 32px 24px;
+  color: #9aa7bd; font-size: 0.85rem;
+}
+footer a { color: #6fa8ff; }
+
+@media (max-width: 600px) {
+  .hero h1 { font-size: 1.8rem; }
+  .hero .tagline { font-size: 1rem; }
+}
+</style>
+</head>
+<body>
+
+<nav>
+  <div class="inner">
+    <a href="/" class="nav-brand">CYD Dashboard</a>
+    <div class="nav-links">
+      <a href="#features">Features</a>
+      <a href="#install">Install</a>
+      <a href="#companion">Companion</a>
+      <a href="https://github.com/ange007/CYD-Dashboard">GitHub</a>
+    </div>
+  </div>
+</nav>
+
+<!-- ── Hero ───────────────────────────────────────────────────── -->
+<section class="hero">
+  <div class="container">
+    <h1>CYD <span>Dashboard</span></h1>
+    <p class="tagline">
+      A touchscreen macro &amp; widget dashboard for <strong>Sunton "Cheap Yellow Display"</strong> ESP32 boards,
+      configured entirely from a browser.
+    </p>
+    <div class="hero-actions">
+      <esp-web-install-button manifest="./manifest.json">
+        <button slot="activate">⚡ Flash firmware</button>
+        <span slot="unsupported">
+          <a href="https://github.com/ange007/CYD-Dashboard/releases" class="btn btn-primary">Download release</a>
+        </span>
+      </esp-web-install-button>
+      <a href="https://github.com/ange007/CYD-Dashboard" class="btn btn-secondary">View on GitHub</a>
+    </div>
+    <p style="color:#9aa7bd;font-size:.82rem;margin-top:12px">
+      Chromium-based browsers only for Web Flash (Chrome, Edge).
+      <a href="flash.html">Standalone flash page →</a>
+    </p>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── Device screenshots ─────────────────────────────────────── -->
+<section class="section">
+  <div class="container">
+    <h2 class="section-title">On-device UI</h2>
+    <p class="section-sub">Everything runs on the display — no host app required.</p>
+    <div class="screenshots-device">
+      <figure>
+        <img src="screenshots/macroses.png" alt="Macros tab">
+        <figcaption>Macros</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/widgets_1.png" alt="Widgets tab">
+        <figcaption>Widgets</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/widgets_2.png" alt="Widgets tab scrolled">
+        <figcaption>Widgets (scrolled)</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/keyboard.png" alt="Virtual keyboard">
+        <figcaption>Virtual keyboard</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/settings.png" alt="Settings">
+        <figcaption>Settings</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<!-- ── Web UI screenshots ─────────────────────────────────────── -->
+<section class="section" style="padding-top:0">
+  <div class="container">
+    <h2 class="section-title">Web configuration UI</h2>
+    <p class="section-sub">Configure macros, widgets, profiles and settings from any browser on the same network.</p>
+    <div class="screenshots-web">
+      <figure>
+        <img src="screenshots/webui-macroses.png" alt="Web UI — Macros">
+        <figcaption>Macros editor</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/webui-widgets.png" alt="Web UI — Widgets">
+        <figcaption>Widgets editor</figcaption>
+      </figure>
+      <figure>
+        <img src="screenshots/webui-settings.png" alt="Web UI — Settings">
+        <figcaption>Settings</figcaption>
+      </figure>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── Features ───────────────────────────────────────────────── -->
+<section class="section" id="features">
+  <div class="container">
+    <h2 class="section-title">Features</h2>
+    <p class="section-sub">Everything runs on the ESP32 — browser is only needed for configuration.</p>
+    <div class="features-grid">
+      <div class="feature-card">
+        <div class="icon">⌨️</div>
+        <h3>Macros</h3>
+        <p>Keys, URL calls, commands, scene folders, toggles, multi-step actions — with per-button icons, colours and images.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">📊</div>
+        <h3>Widgets</h3>
+        <p>Live tiles fed by URL polling (via browser or companion proxy) or host system metrics — grid and masonry layouts.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🗂️</div>
+        <h3>Profiles &amp; Scenes</h3>
+        <p>Group macros into scenes, switch profile sets on the fly, per-scene backgrounds, auto-switch based on the active app.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔌</div>
+        <h3>HID output</h3>
+        <p>BLE keyboard (NimBLE), USB HID (S3/C3), or desktop companion relay — auto-selected by priority.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🖮</div>
+        <h3>Virtual keyboard</h3>
+        <p>On-device LVGL keyboard sends live keypresses via the active HID backend; input-language switch button for Win / macOS / Linux.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🌐</div>
+        <h3>Browser-based config</h3>
+        <p>Vue 3 SPA — open <code>cyd-dashboard.local</code> from any device on the same network, no app install needed.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🖼️</div>
+        <h3>Backgrounds &amp; icons</h3>
+        <p>Upload images from the web UI; auto-converted to device formats stored on microSD.</p>
+      </div>
+      <div class="feature-card">
+        <div class="icon">🔄</div>
+        <h3>OTA updates</h3>
+        <p>Firmware updates over the browser on 16 MB-flash boards — no cable needed after first flash.</p>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── Install ────────────────────────────────────────────────── -->
+<section class="section" id="install">
+  <div class="container">
+    <h2 class="section-title">Supported boards</h2>
+    <p class="section-sub">Built on <a href="https://github.com/rzeldent/esp32-smartdisplay">esp32-smartdisplay</a> — additional boards can be added as new PlatformIO environments.</p>
+    <table class="boards-table">
+      <thead>
+        <tr><th>Board</th><th>Chip</th><th>PSRAM</th><th>Notes</th></tr>
+      </thead>
+      <tbody>
+        <tr>
+          <td><code>esp32-2432S028Rv2</code></td>
+          <td>ESP32</td>
+          <td>no</td>
+          <td>320×240 ILI9341; tight DRAM</td>
+        </tr>
+        <tr>
+          <td><code>JC4827W543C</code></td>
+          <td>ESP32-S3</td>
+          <td>yes</td>
+          <td>480×272; microSD + USB-HID; 4 MB flash (no OTA)</td>
+        </tr>
+      </tbody>
+    </table>
+
+    <div style="margin-top:40px">
+      <h2 class="section-title">Quick start</h2>
+      <p class="section-sub">Flash a pre-built release from the browser above, or build from source:</p>
+      <div class="quickstart">
+        <h3>From source (PlatformIO)</h3>
+        <p>Clone with submodules — the <code>boards/</code> submodule is required.</p>
+<pre><code>git clone --recurse-submodules https://github.com/ange007/CYD-Dashboard
+cd CYD_Dashboard
+pio run -t upload      # flash firmware
+pio run -t uploadfs    # build web bundle + LittleFS</code></pre>
+        <p style="margin-top:16px">On first boot configure Wi-Fi from the on-screen prompt or serial, then open:</p>
+<pre><code>http://cyd-dashboard.local/</code></pre>
+      </div>
+    </div>
+  </div>
+</section>
+
+<hr class="divider">
+
+<!-- ── Companion ──────────────────────────────────────────────── -->
+<section class="section" id="companion">
+  <div class="container">
+    <h2 class="section-title">Companion app</h2>
+    <p class="section-sub">
+      Desktop app (Go + Wails) — recommended HID backend on machines where BLE is unreliable or unavailable.<br>
+      <a href="https://github.com/ange007/CYD-Dashboard-Companion">github.com/ange007/CYD-Dashboard-Companion</a>
+    </p>
+    <div class="companion-features">
+      <div class="companion-item">
+        <strong>HID relay</strong>
+        <span>Injects keypresses &amp; text into the host PC via <code>SendInput</code> (Windows).</span>
+      </div>
+      <div class="companion-item">
+        <strong>Fetch proxy</strong>
+        <span>Performs HTTP requests on the device's behalf — no CORS, no 64 KB limit.</span>
+      </div>
+      <div class="companion-item">
+        <strong>System metrics</strong>
+        <span>Supplies CPU, memory, disk, network and temperature data to CYD widgets.</span>
+      </div>
+      <div class="companion-item">
+        <strong>Profile switching</strong>
+        <span>Auto-switches macro profiles based on the active application window.</span>
+      </div>
+      <div class="companion-item">
+        <strong>Auto-discovery</strong>
+        <span>Finds the device via mDNS or a fixed URL.</span>
+      </div>
+      <div class="companion-item">
+        <strong>System tray daemon</strong>
+        <span>Persists as a tray icon with optional start-at-login.</span>
+      </div>
+    </div>
+    <table class="boards-table" style="margin-top:24px">
+      <thead>
+        <tr><th>Platform</th><th>HID relay</th><th>Fetch proxy</th><th>System metrics</th><th>Focus rules</th></tr>
+      </thead>
+      <tbody>
+        <tr><td>Windows</td><td>✅ Full</td><td>✅</td><td>✅</td><td>✅ Full</td></tr>
+        <tr><td>macOS</td><td>—</td><td>✅</td><td>✅</td><td>⚠️ App name only</td></tr>
+        <tr><td>Linux (X11 / Hyprland)</td><td>—</td><td>✅</td><td>✅</td><td>⚠️ X11 + Hyprland</td></tr>
+        <tr><td>Linux (GNOME/Wayland)</td><td>—</td><td>✅</td><td>✅</td><td>—</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<hr class="divider">
+
+<footer>
+  <p>
+    <a href="https://github.com/ange007/CYD-Dashboard">GitHub</a> ·
+    <a href="flash.html">Flash tool</a> ·
+    <a href="https://github.com/ange007/CYD-Dashboard-Companion">Companion app</a>
+  </p>
+  <p>CYD Dashboard — open source, MIT licensed.</p>
+</footer>
+
+</body>
+</html>
