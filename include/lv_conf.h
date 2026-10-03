@@ -142,6 +142,7 @@
  *-----------*/
 
 #ifdef BOARD_HAS_PSRAM
+#define LV_USE_SYSMON 1          /*Required by LV_USE_PERF_MONITOR (LVGL >= 9.6 enforces it)*/
 #define LV_USE_PERF_MONITOR 1
 #else
 /* Plain-ESP32 (no PSRAM): perf monitor costs ~1-2 KB state + label in lv_global. */
