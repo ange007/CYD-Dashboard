@@ -102,8 +102,10 @@ jobs:
           JC4827W543C       esp32s3 0x0    ESP32-S3
           "
 
-          BOOT_APP0=$(find ~/.platformio -path '*framework-arduinoespressif32*' -name boot_app0.bin | head -1)
-          echo "boot_app0: $BOOT_APP0"
+          # boot_app0.bin ships with the Arduino framework, which PlatformIO only
+          # installs during the first `pio run` (on a cold cache it isn't there
+          # yet) — so it is looked up inside the loop, after the first build.
+          BOOT_APP0=""
 
           STAGE=$(mktemp -d)
           mkdir -p "$STAGE/web" "$STAGE/docs/firmware"
@@ -118,6 +120,11 @@ jobs:
             echo "=== building $ENV ($CHIP, $FAMILY) ==="
             pio run -e "$ENV"
             pio run -e "$ENV" -t buildfs
+            if [ -z "$BOOT_APP0" ]; then
+              BOOT_APP0=$(find ~/.platformio -path '*framework-arduinoespressif32*' -name boot_app0.bin | head -1)
+              echo "boot_app0: $BOOT_APP0"
+              [ -n "$BOOT_APP0" ] || { echo "::error::boot_app0.bin not found"; exit 1; }
+            fi
             B=".pio/build/$ENV"
             BIN="cyd-dashboard-$ENV.bin"
             # keep flash mode/freq/size from the PlatformIO bootloader header —
