@@ -1,0 +1,1 @@
+{ "name": "CYD Dashboard", "version": "v0.0.6", "new_install_prompt_erase": true, "builds": [ {"chipFamily":"ESP32","parts":[{"path":"https://ange007.github.io/CYD-Dashboard/firmware/cyd-dashboard-esp32-2432S028Rv2.bin","offset":0}]},{"chipFamily":"ESP32-S3","parts":[{"path":"https://ange007.github.io/CYD-Dashboard/firmware/cyd-dashboard-JC4827W543C.bin","offset":0}]} ] }

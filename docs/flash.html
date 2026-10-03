@@ -1,0 +1,69 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Flash CYD Dashboard</title>
+<script type="module" src="https://unpkg.com/esp-web-tools@10/dist/web/install-button.js?module"></script>
+<style>
+  :root { color-scheme: dark; }
+  body {
+    margin: 0; min-height: 100vh;
+    background: #1a1f2e; color: #e8edf4;
+    font: 16px/1.6 system-ui, -apple-system, sans-serif;
+    display: flex; align-items: center; justify-content: center;
+  }
+  main { max-width: 560px; padding: 32px 24px; }
+  h1 { font-size: 1.6rem; margin: 0 0 4px; }
+  .sub { color: #9aa7bd; margin: 0 0 28px; }
+  .card {
+    background: #222a3d; border: 1px solid #324056; border-radius: 12px;
+    padding: 20px; margin-bottom: 20px;
+  }
+  ol { margin: 0; padding-left: 20px; }
+  ol li { margin: 6px 0; }
+  code { background: #2c3650; padding: 1px 6px; border-radius: 4px; font-size: 0.9em; }
+  esp-web-install-button { display: block; margin: 8px 0; }
+  .btn-fallback {
+    display: inline-block; padding: 10px 20px; border-radius: 8px;
+    background: #3d7ed4; color: #fff; font-weight: 600; text-decoration: none;
+  }
+  .warn {
+    background: #3a2a1a; border: 1px solid #6b4a1f; color: #f0c890;
+    border-radius: 8px; padding: 12px 16px; font-size: 0.9rem; margin-top: 16px;
+  }
+  a { color: #6fa8ff; }
+  .muted { color: #9aa7bd; font-size: 0.85rem; }
+</style>
+</head>
+<body>
+<main>
+  <h1>Flash CYD Dashboard</h1>
+  <p class="sub">Install the firmware onto your Cheap Yellow Display straight from the browser — no toolchain needed.</p>
+
+  <div class="card">
+    <ol>
+      <li>Connect the board over <strong>USB</strong>.</li>
+      <li>Click <strong>Install</strong> and pick the serial port.</li>
+      <li>The chip (ESP32 / ESP32-S3) is detected automatically — the matching image is flashed.</li>
+    </ol>
+    <esp-web-install-button manifest="./manifest.json">
+      <button slot="activate" class="btn-fallback">⚡ Install / Update</button>
+      <span slot="unsupported">Your browser doesn't support Web Serial.</span>
+      <span slot="not-allowed">Serial access not allowed — use HTTPS and grant permission.</span>
+    </esp-web-install-button>
+    <p class="muted">Flashes bootloader, partitions, app and filesystem (web fallback + icons).</p>
+  </div>
+
+  <div class="warn">
+    <strong>Chromium browsers only</strong> (Chrome, Edge, Opera) — Web Serial isn't available in Firefox or Safari.
+    On Windows you may need a USB-UART driver: <a href="https://www.wch.cn/downloads/CH341SER_EXE.html">CH340</a> or
+    <a href="https://www.silabs.com/developer-tools/usb-to-uart-bridge-vcp-drivers">CP2102</a>.
+  </div>
+
+  <p class="muted" style="margin-top:24px">
+    Source &amp; releases: <a href="https://github.com/ange007/CYD-Dashboard">github.com/ange007/CYD-Dashboard</a>
+  </p>
+</main>
+</body>
+</html>
